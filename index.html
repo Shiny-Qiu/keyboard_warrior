@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>键盘侠</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="brand" id="brandReset" type="button" aria-label="重新开始">
+          <img class="brand-mark" src="./键盘侠LOGO.png" alt="键盘侠 LOGO" />
+          <span class="brand-copy">
+            <strong>键盘侠</strong>
+            <small>一个能让你打字速度快10倍的网站</small>
+          </span>
+        </button>
+        <nav class="main-tabs" aria-label="模块">
+          <button class="tab is-active" type="button" data-view="test">测试</button>
+          <button class="tab" type="button" data-view="practice">英文练习</button>
+          <button class="tab" type="button" data-view="history">成绩</button>
+        </nav>
+        <div class="status-strip" aria-live="polite">
+          <span id="clockLabel">30</span>
+          <span id="modeLabel">计时 30 秒 · 英文</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="panel settings-panel" aria-label="设置">
+          <div class="setting-group">
+            <span class="setting-title">时间</span>
+            <div class="segmented" id="timeOptions">
+              <button class="option" type="button" data-time="15">15</button>
+              <button class="option is-active" type="button" data-time="30">30</button>
+              <button class="option" type="button" data-time="60">60</button>
+              <button class="option" type="button" data-time="120">120</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <span class="setting-title">辅助</span>
+            <div class="toggle-row">
+              <button class="toggle" type="button" data-toggle="punctuation">标点</button>
+              <button class="toggle" type="button" data-toggle="numbers">数字</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <span class="setting-title">语言</span>
+            <div class="segmented vertical" id="languageOptions">
+              <button class="option is-active" type="button" data-language="common">英文常用词</button>
+              <button class="option" type="button" data-language="advanced">英文进阶词</button>
+              <button class="option" type="button" data-language="missed">弱项词</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <span class="setting-title">难度</span>
+            <div class="segmented" id="difficultyOptions">
+              <button class="option is-active" type="button" data-difficulty="normal">普通</button>
+              <button class="option" type="button" data-difficulty="expert">专家</button>
+            </div>
+          </div>
+
+          <button class="primary-action" id="restartBtn" type="button">重新开始</button>
+        </section>
+
+        <section class="typing-stage" id="testView" aria-label="打字测试">
+          <div class="metrics-grid" aria-live="polite">
+            <div class="metric">
+              <span class="metric-value" id="wpmMetric">0</span>
+              <span class="metric-label">字符/分</span>
+            </div>
+            <div class="metric">
+              <span class="metric-value" id="rawMetric">0</span>
+              <span class="metric-label">原始速度</span>
+            </div>
+            <div class="metric">
+              <span class="metric-value" id="accuracyMetric">100%</span>
+              <span class="metric-label">准确率</span>
+            </div>
+            <div class="metric">
+              <span class="metric-value" id="consistencyMetric">100%</span>
+              <span class="metric-label">稳定性</span>
+            </div>
+          </div>
+
+          <div class="type-surface" id="typeSurface" tabindex="0" aria-label="打字区域">
+            <div class="typing-copy" id="typingCopy"></div>
+            <img class="typing-bird" id="typingBird" src="./键盘侠动效逐帧透明底/1_pixian_ai.png" alt="" aria-hidden="true" />
+          </div>
+
+          <div class="below-stage">
+            <div class="mini-readout" id="charReadout">0 / 0 / 0</div>
+          </div>
+          <div class="finger-guide" id="testFingerGuide" aria-live="polite"></div>
+        </section>
+
+        <section class="typing-stage view-hidden" id="practiceView" aria-label="英文打字练习">
+          <div class="practice-layout">
+            <aside class="lesson-list" id="lessonList"></aside>
+            <div class="lesson-workbench">
+              <div class="lesson-header">
+                <div>
+                  <span class="eyebrow">英文练习模块</span>
+                  <h1 id="lessonTitle">基准键位控制</h1>
+                </div>
+              </div>
+              <div class="lesson-stats">
+                <span id="lessonFocus">基准键位</span>
+                <span id="lessonScore">已完成 0 次</span>
+                <span id="lessonWeak">弱项：暂无</span>
+                <span id="lessonCoach">教练：等待输入</span>
+              </div>
+              <div class="metrics-grid practice-metrics" aria-live="polite">
+                <div class="metric">
+                  <span class="metric-value" id="practiceWpmMetric">0</span>
+                  <span class="metric-label">字符/分</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-value" id="practiceRawMetric">0</span>
+                  <span class="metric-label">原始速度</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-value" id="practiceAccuracyMetric">100%</span>
+                  <span class="metric-label">准确率</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-value" id="practiceConsistencyMetric">100%</span>
+                  <span class="metric-label">稳定性</span>
+                </div>
+              </div>
+              <div class="type-surface practice-surface" id="practiceSurface" tabindex="0" aria-label="英文练习打字区域">
+                <div class="typing-copy" id="practiceCopy"></div>
+                <img class="typing-bird" id="practiceBird" src="./键盘侠动效逐帧透明底/1_pixian_ai.png" alt="" aria-hidden="true" />
+              </div>
+              <div class="below-stage">
+                <div class="mini-readout" id="practiceReadout">0 / 0 / 0</div>
+                <button class="ghost-action" id="nextLessonLineBtn" type="button">重置练习</button>
+              </div>
+              <div class="finger-guide" id="practiceFingerGuide" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="typing-stage view-hidden" id="historyView" aria-label="成绩">
+          <div class="history-head">
+            <div>
+              <span class="eyebrow">本地成绩</span>
+              <h1>成绩记录</h1>
+            </div>
+            <button class="ghost-action danger" id="clearHistoryBtn" type="button">清空</button>
+          </div>
+          <div class="history-summary" id="historySummary"></div>
+          <div class="history-table" id="historyTable"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="result-dialog" id="resultDialog">
+      <div class="result-top">
+        <div>
+          <span class="eyebrow">测试结果</span>
+          <h2 id="resultTitle">30 秒</h2>
+        </div>
+        <button class="icon-action" id="closeResultBtn" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="result-dashboard">
+        <aside class="result-hero">
+          <div class="result-big">
+            <small>字符/分</small>
+            <span id="resultWpm">0</span>
+          </div>
+          <div class="result-big">
+            <small>准确率</small>
+            <span id="resultAcc">100%</span>
+          </div>
+        </aside>
+        <div class="result-chart-panel">
+          <div class="chart-legend">
+            <span><i class="legend-speed"></i>字符/分</span>
+            <span><i class="legend-raw"></i>原始速度</span>
+            <span><i class="legend-burst"></i>爆发速度</span>
+            <span><i class="legend-error"></i>错误</span>
+          </div>
+          <svg id="resultChart" class="result-chart" role="img" aria-label="测试速度曲线"></svg>
+        </div>
+      </div>
+      <div class="result-details">
+        <span id="resultRaw">原始速度 0</span>
+        <span id="resultChars">字符 0/0/0</span>
+        <span id="resultConsistency">稳定性 100%</span>
+        <span id="resultType">计时 30 秒 · 英文</span>
+        <span id="resultPb">最佳 -</span>
+      </div>
+      <div class="missed-words" id="missedWords"></div>
+      <div class="result-actions">
+        <button class="secondary-action" id="resultNextBtn" type="button">下一组</button>
+        <button class="primary-action" id="resultRestartBtn" type="button">再试一次</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
