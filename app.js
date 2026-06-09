@@ -69,19 +69,31 @@ const ADAPTIVE_STAGES = [
     id: "home",
     label: "基准键位控制",
     focus: "asdf jkl; 与空格",
-    words: ["as", "sad", "dad", "lad", "fall", "ask", "half", "dash", "all", "flag", "glass", "salad", "shall", "flash"]
+    words: [
+      "as", "sad", "dad", "lad", "fall", "ask", "half", "dash", "all", "flag", "glass", "salad", "shall", "flash",
+      "flask", "slash", "lass", "hall", "halls", "falls", "lads", "adds", "alas", "salsa", "ash", "had",
+      "has", "gas", "glad", "gala", "saga", "jag", "hag", "slag"
+    ]
   },
   {
     id: "top",
     label: "上排键位伸展",
     focus: "qwerty uiop",
-    words: ["we", "you", "type", "quiet", "power", "proper", "upper", "word", "query", "require", "reward", "writer", "keyboard"]
+    words: [
+      "we", "you", "type", "quiet", "power", "proper", "upper", "word", "query", "require", "reward", "writer", "keyboard",
+      "quite", "quote", "queue", "queen", "quick", "write", "wire", "route", "outer", "tower", "poetry", "report",
+      "prior", "proof", "error", "were", "your", "their", "there", "where", "reply", "review"
+    ]
   },
   {
     id: "bottom",
     label: "下排键位平衡",
     focus: "zxcvbnm",
-    words: ["zinc", "box", "move", "calm", "navy", "mix", "brave", "common", "value", "vivid", "balance", "movement"]
+    words: [
+      "zinc", "box", "move", "calm", "navy", "mix", "brave", "common", "value", "vivid", "balance", "movement",
+      "zone", "zoom", "maze", "comma", "cabin", "van", "ban", "novel", "civic", "canvas", "bamboo", "moment",
+      "volume", "movie", "manner", "number", "bottom", "memory", "native", "common"
+    ]
   },
   {
     id: "common",
@@ -184,12 +196,14 @@ const PRACTICE_LESSONS = [
 ];
 
 const STORAGE_KEY = "typing-practice-local-v1";
+const GUIDE_POSITION_KEY = `${STORAGE_KEY}:finger-guide-position`;
 const RECORDS_API = "/api/records";
 const ADAPTIVE_API = "/api/adaptive-practice";
 const ADAPTIVE_LESSON_ID = "adaptive";
 const ADAPTIVE_SEGMENT_CHARS = 180;
 const ADAPTIVE_BUFFER_MIN = 300;
 const LOCAL_HISTORY_FALLBACK_LIMIT = 100;
+const MASTERED_WORD_LIMIT = 180;
 const WORD_BUFFER_MIN = 90;
 const BIRD_FRAMES = [
   new URL("./键盘侠动效逐帧透明底/1_pixian_ai.png", import.meta.url).href,
@@ -209,14 +223,61 @@ let birdTimerId = null;
 let birdFrameIndex = 0;
 let birdLastInputAt = 0;
 let activeBird = null;
+let realInputComposing = false;
+let realInputSkipText = "";
+let realInputHandledAt = 0;
+let guidePositions = loadGuidePositions();
+let fingerGuideSyncFrame = 0;
+let fingerGuideHeartbeatId = 0;
+const guideDragState = {
+  guide: null,
+  view: "",
+  startPointerX: 0,
+  startPointerY: 0,
+  startX: 0,
+  startY: 0
+};
 
 const KEYBOARD_LAYOUT = [
-  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "delete"],
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "delete"],
   ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
-  ["a", "s", "d", "f", "g", "h", "j", "k", "l", ";"],
-  ["z", "x", "c", "v", "b", "n", "m", ",", ".", "/"],
+  ["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'"],
+  ["left-shift", "z", "x", "c", "v", "b", "n", "m", ",", ".", "/", "right-shift"],
   ["space"]
 ];
+
+const KEY_NEIGHBORS = {
+  q: ["w", "a"],
+  w: ["q", "e", "s"],
+  e: ["w", "r", "d"],
+  r: ["e", "t", "f"],
+  t: ["r", "y", "g"],
+  y: ["t", "u", "h"],
+  u: ["y", "i", "j"],
+  i: ["u", "o", "k"],
+  o: ["i", "p", "l"],
+  p: ["o", ";"],
+  a: ["q", "s", "z"],
+  s: ["a", "w", "d", "x"],
+  d: ["s", "e", "f", "c"],
+  f: ["d", "r", "g", "v"],
+  g: ["f", "t", "h", "b"],
+  h: ["g", "y", "j", "n"],
+  j: ["h", "u", "k", "m"],
+  k: ["j", "i", "l", ","],
+  l: ["k", "o", ";", "."],
+  ";": ["l", "p", "/"],
+  z: ["a", "x"],
+  x: ["z", "s", "c"],
+  c: ["x", "d", "v"],
+  v: ["c", "f", "b"],
+  b: ["v", "g", "n"],
+  n: ["b", "h", "m"],
+  m: ["n", "j", ","],
+  ",": ["m", "k", "."],
+  ".": [",", "l", "/"],
+  "/": [".", ";"]
+};
 
 const KEY_FINGERS = {
   "1": { hand: "左手", finger: "小指", group: "pinky" },
@@ -256,11 +317,15 @@ const KEY_FINGERS = {
   l: { hand: "右手", finger: "无名指", group: "ring" },
   ".": { hand: "右手", finger: "无名指", group: "ring" },
   "0": { hand: "右手", finger: "小指", group: "pinky" },
+  "-": { hand: "右手", finger: "小指", group: "pinky" },
   p: { hand: "右手", finger: "小指", group: "pinky" },
   ";": { hand: "右手", finger: "小指", group: "pinky" },
+  "'": { hand: "右手", finger: "小指", group: "pinky" },
   "/": { hand: "右手", finger: "小指", group: "pinky" },
   "?": { hand: "右手", finger: "小指", group: "pinky" },
   delete: { hand: "右手", finger: "小指", group: "pinky" },
+  "left-shift": { hand: "左手", finger: "小指", group: "pinky" },
+  "right-shift": { hand: "右手", finger: "小指", group: "pinky" },
   space: { hand: "左/右手", finger: "拇指", group: "thumb" }
 };
 
@@ -276,27 +341,33 @@ const els = {
   toggleButtons: document.querySelectorAll(".toggle"),
   restartBtn: document.querySelector("#restartBtn"),
   typeSurface: document.querySelector("#typeSurface"),
+  realTypingInput: document.querySelector("#realTypingInput"),
   typingCopy: document.querySelector("#typingCopy"),
   typingBird: document.querySelector("#typingBird"),
   testFingerGuide: document.querySelector("#testFingerGuide"),
   wpmMetric: document.querySelector("#wpmMetric"),
   rawMetric: document.querySelector("#rawMetric"),
   accuracyMetric: document.querySelector("#accuracyMetric"),
-  consistencyMetric: document.querySelector("#consistencyMetric"),
   charReadout: document.querySelector("#charReadout"),
   testView: document.querySelector("#testView"),
   practiceView: document.querySelector("#practiceView"),
   historyView: document.querySelector("#historyView"),
   lessonList: document.querySelector("#lessonList"),
   lessonTitle: document.querySelector("#lessonTitle"),
+  levelStatusPanel: document.querySelector("#levelStatusPanel"),
+  levelStatusBadge: document.querySelector("#levelStatusBadge"),
+  levelStatusTarget: document.querySelector("#levelStatusTarget"),
+  levelStatusProgress: document.querySelector("#levelStatusProgress"),
+  levelStatusNext: document.querySelector("#levelStatusNext"),
   lessonFocus: document.querySelector("#lessonFocus"),
   lessonScore: document.querySelector("#lessonScore"),
+  lessonMonitor: document.querySelector("#lessonMonitor"),
+  lessonMonitorWpm: document.querySelector("#lessonMonitorWpm"),
+  lessonMonitorRaw: document.querySelector("#lessonMonitorRaw"),
+  lessonMonitorAccuracy: document.querySelector("#lessonMonitorAccuracy"),
+  lessonMonitorStatus: document.querySelector("#lessonMonitorStatus"),
   lessonWeak: document.querySelector("#lessonWeak"),
   lessonCoach: document.querySelector("#lessonCoach"),
-  practiceWpmMetric: document.querySelector("#practiceWpmMetric"),
-  practiceRawMetric: document.querySelector("#practiceRawMetric"),
-  practiceAccuracyMetric: document.querySelector("#practiceAccuracyMetric"),
-  practiceConsistencyMetric: document.querySelector("#practiceConsistencyMetric"),
   practiceSurface: document.querySelector("#practiceSurface"),
   practiceCopy: document.querySelector("#practiceCopy"),
   practiceBird: document.querySelector("#practiceBird"),
@@ -314,7 +385,6 @@ const els = {
   resultWpm: document.querySelector("#resultWpm"),
   resultAcc: document.querySelector("#resultAcc"),
   resultRaw: document.querySelector("#resultRaw"),
-  resultConsistency: document.querySelector("#resultConsistency"),
   resultChart: document.querySelector("#resultChart"),
   resultChars: document.querySelector("#resultChars"),
   resultType: document.querySelector("#resultType"),
@@ -351,6 +421,7 @@ const state = {
   practiceSamples: [],
   practiceSampleCursor: 0,
   practiceCheckpoint: 0,
+  practiceMonitorStartTime: null,
   practiceKeyEvents: [],
   practiceLastKeyAt: 0,
   adaptive: persisted.adaptive,
@@ -372,6 +443,7 @@ function createDefaultAdaptiveState() {
     focusKeys: ["a", "s", "d", "f", "j", "k", "l", ";"],
     focusFingers: ["左手小指", "左手无名指", "左手中指", "左手食指", "右手食指", "右手中指", "右手无名指", "右手小指"],
     coachMessage: "先用简单键位建立准确率，再逐步提速。",
+    masteredWords: [],
     streak: 0,
     stuck: 0,
     source: "local"
@@ -388,7 +460,10 @@ function normalizeAdaptiveState(value) {
     targetAccuracy: clamp(Number(value.targetAccuracy) || base.targetAccuracy, 85, 99),
     targetCpm: clamp(Number(value.targetCpm) || base.targetCpm, 40, 420),
     focusKeys: Array.isArray(value.focusKeys) ? value.focusKeys.slice(0, 10) : base.focusKeys,
-    focusFingers: Array.isArray(value.focusFingers) ? value.focusFingers.slice(0, 8) : base.focusFingers
+    focusFingers: Array.isArray(value.focusFingers) ? value.focusFingers.slice(0, 8) : base.focusFingers,
+    masteredWords: Array.isArray(value.masteredWords)
+      ? [...new Set(value.masteredWords.map(cleanPracticeWord).filter(Boolean))].slice(0, MASTERED_WORD_LIMIT)
+      : []
   };
 }
 
@@ -473,8 +548,16 @@ async function migrateBrowserHistoryToFile() {
 function applyRecordHistory(records) {
   state.history = records;
   rebuildPracticeStateFromRecords(records);
+  state.adaptive = normalizeAdaptiveState({
+    ...state.adaptive,
+    masteredWords: buildMasteredWords()
+  });
   persist();
   buildLessonList();
+  if (isAdaptiveLesson() && !state.practiceStarted && !state.practiceTyped) {
+    state.practiceText = generatePracticeChunk();
+    renderPractice();
+  }
   renderHistory();
 }
 
@@ -493,8 +576,46 @@ function rebuildPracticeStateFromRecords(records) {
     };
   }
   state.practice = practice;
-  if (latestAdaptive) state.adaptive = normalizeAdaptiveState(latestAdaptive);
+  if (latestAdaptive) state.adaptive = recoverAdaptiveStateFromRecords(records, normalizeAdaptiveState(latestAdaptive));
   state.weakWords = [...new Set(weakWords.filter(Boolean)), ...state.weakWords].slice(0, 80);
+}
+
+function isSpeedOnlyDowngradeRecord(record) {
+  const adaptive = record?.adaptive;
+  if (!adaptive || adaptive.decision !== "downgrade") return false;
+  const targetAccuracy = Number(adaptive.targetAccuracy || record.targetAccuracy || 94);
+  const targetCpm = Number(adaptive.targetCpm || record.targetCpm || 0);
+  const accuracy = Number(record.accuracy || 0);
+  const cpm = Number(record.wpm || record.cpm || 0);
+  return accuracy >= targetAccuracy && cpm < targetCpm;
+}
+
+function recoverAdaptiveStateFromRecords(records, candidate) {
+  const adaptiveRecords = records.filter((record) => record.type === "practice" && record.lessonId === ADAPTIVE_LESSON_ID && record.adaptive);
+  const lastSpeedOnlyDowngradeIndex = adaptiveRecords.findLastIndex(isSpeedOnlyDowngradeRecord);
+  if (lastSpeedOnlyDowngradeIndex <= 0) return candidate;
+
+  const beforeDowngrade = normalizeAdaptiveState(adaptiveRecords[lastSpeedOnlyDowngradeIndex - 1].adaptive);
+  if (beforeDowngrade.level <= candidate.level) return candidate;
+
+  const afterDowngrade = adaptiveRecords.slice(lastSpeedOnlyDowngradeIndex + 1);
+  const hasRealDifficultyAfter = afterDowngrade.some((record) => Number(record.accuracy || 0) < Math.max(88, Number(record.adaptive?.targetAccuracy || 94) - 4));
+  const hasAdvancedAfter = afterDowngrade.some((record) => record.adaptive?.decision === "advance");
+  if (hasRealDifficultyAfter || hasAdvancedAfter) return candidate;
+
+  const stage = getAdaptiveStage(beforeDowngrade.level);
+  return normalizeAdaptiveState({
+    ...candidate,
+    level: beforeDowngrade.level,
+    stageId: stage.id,
+    stageLabel: stage.label,
+    decision: "focus",
+    streak: 0,
+    stuck: 0,
+    targetAccuracy: getAdaptiveTargetAccuracy(beforeDowngrade.level),
+    targetCpm: getAdaptiveTargetCpm(beforeDowngrade.level),
+    coachMessage: "已修正速度未达标导致的降级，继续保持当前等级并加强慢词。"
+  });
 }
 
 async function appendRecord(record) {
@@ -652,39 +773,113 @@ function elapsedSeconds() {
   return Math.max(0, (performance.now() - state.startTime) / 1000);
 }
 
-function getStats(typed, target, elapsed, samples = state.samples) {
+function getStats(typed, target, elapsed) {
   const seconds = Math.max(elapsed, 0.001);
   const minutes = seconds / 60;
   let correct = 0;
-  for (let index = 0; index < typed.length; index += 1) {
-    if (typed[index] === target[index]) correct += 1;
+  let incorrect = 0;
+  const targetLength = Math.min(typed.length, target.length);
+  for (let index = 0; index < targetLength; index += 1) {
+    if (isTypedCharCorrect(typed[index], target[index])) {
+      correct += 1;
+    } else {
+      incorrect += 1;
+    }
   }
-  const incorrect = Math.max(typed.length - correct, 0);
   const extra = Math.max(typed.length - target.length, 0);
   const accuracy = typed.length ? (correct / typed.length) * 100 : 100;
   const wpm = correct / minutes;
   const raw = typed.length / minutes;
-  const consistency = calculateConsistency(samples);
   return {
     correct,
     incorrect,
     extra,
     accuracy: clamp(accuracy, 0, 100),
     wpm: Math.max(0, wpm),
-    raw: Math.max(0, raw),
-    consistency
+    raw: Math.max(0, raw)
   };
 }
 
-function calculateConsistency(samples = state.samples) {
-  if (samples.length < 3) return 100;
-  const values = samples.map((sample) => sample.wpm).filter((value) => Number.isFinite(value));
-  if (values.length < 3) return 100;
-  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-  if (!mean) return 100;
-  const variance = values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / values.length;
-  const cv = Math.sqrt(variance) / mean;
-  return clamp(100 - cv * 72, 0, 100);
+function isTypedCharCorrect(typedChar, expectedChar) {
+  if (typedChar === undefined || expectedChar === undefined) return false;
+  return typedChar === expectedChar;
+}
+
+function getInputOutputText(event) {
+  return event.data ?? els.realTypingInput?.value ?? "";
+}
+
+function acceptRealTypedText(text, nativeInput = false) {
+  if (!text) return false;
+  let accepted = false;
+  for (const typedChar of text) {
+    if (typedChar === "\n" || typedChar === "\r") continue;
+    if (state.view === "test") {
+      acceptTestInputChar(typedChar);
+      accepted = true;
+    }
+    if (state.view === "practice") {
+      acceptPracticeInputChar(typedChar);
+      accepted = true;
+    }
+  }
+  if (accepted && nativeInput) realInputHandledAt = performance.now();
+  if (accepted) scheduleFingerGuideRefresh();
+  return accepted;
+}
+
+function queueRealInputKeyFallback(event) {
+  if (event.defaultPrevented || event.key.length !== 1) return;
+  const typedChar = event.key;
+
+  if (event.target !== els.realTypingInput) {
+    event.preventDefault();
+    acceptRealTypedText(typedChar, false);
+    requestAnimationFrame(focusActiveTypingSurface);
+    return;
+  }
+
+  const nativeHandledAt = realInputHandledAt;
+  window.setTimeout(() => {
+    if (realInputHandledAt !== nativeHandledAt) return;
+    if (els.realTypingInput) els.realTypingInput.value = "";
+    acceptRealTypedText(typedChar, false);
+  }, 80);
+}
+
+function isTypedTextCorrect(typedText, expectedText) {
+  return typedText === expectedText;
+}
+
+function startPracticeMonitorWindow() {
+  if (state.practiceMonitorStartTime !== null) return;
+  state.practiceMonitorStartTime = getPracticeElapsed();
+}
+
+function getPracticeSegmentStats(segmentStart = state.practiceCheckpoint, segmentEnd = state.practiceTyped.length) {
+  const typed = state.practiceTyped.slice(segmentStart, segmentEnd);
+  const target = state.practiceText.slice(segmentStart, segmentEnd);
+  if (!typed.length) {
+    return {
+      ...getStats("", "", 1),
+      elapsed: 0,
+      monitoredChars: 0
+    };
+  }
+  const currentElapsed = getPracticeElapsed();
+  const events = state.practiceKeyEvents
+    .filter((event) => event.type === "char" && event.position >= segmentStart && event.position < segmentEnd)
+    .sort((a, b) => a.position - b.position);
+  const activeWindowStart = segmentStart === state.practiceCheckpoint ? state.practiceMonitorStartTime : null;
+  const firstElapsed = Number.isFinite(activeWindowStart)
+    ? activeWindowStart
+    : (Number.isFinite(events[0]?.elapsed) ? events[0].elapsed : currentElapsed);
+  const elapsed = Math.max(currentElapsed - firstElapsed, 0);
+  return {
+    ...getStats(typed, target, elapsed),
+    elapsed,
+    monitoredChars: typed.length
+  };
 }
 
 function clamp(value, min, max) {
@@ -708,7 +903,7 @@ function tick() {
 
 function createTestSample(second) {
   const previous = state.samples[state.samples.length - 1];
-  const stats = getStats(state.typed, state.targetText, Math.max(second, 0.001), state.samples);
+  const stats = getStats(state.typed, state.targetText, Math.max(second, 0.001));
   const previousTyped = previous ? previous.typedLength : 0;
   const previousErrors = previous ? previous.errors : 0;
   const delta = Math.max(0, state.typed.length - previousTyped);
@@ -749,16 +944,24 @@ function handleTypingKey(event) {
   if (state.finished) return;
   if (event.key === "Backspace" || event.key === "Delete") {
     event.preventDefault();
-    if (state.typed.length) {
-      state.typed = state.typed.slice(0, -1);
-      renderAll();
-    }
+    deleteTestInputChar();
     return;
   }
-  if (event.key.length !== 1) return;
-  event.preventDefault();
+  queueRealInputKeyFallback(event);
+}
+
+function deleteTestInputChar() {
+  if (!state.typed.length) return false;
+  state.typed = state.typed.slice(0, -1);
+  renderAll();
+  scheduleFingerGuideRefresh();
+  return true;
+}
+
+function acceptTestInputChar(typedChar) {
+  if (state.view !== "test" || state.finished || !typedChar) return;
   startTest();
-  state.typed += event.key;
+  state.typed += typedChar;
   triggerTypingBird(els.typingBird);
   appendTimedWordsIfNeeded();
   renderAll();
@@ -788,8 +991,8 @@ function finishTest() {
     raw: Math.round(stats.raw),
     speedUnit: "cpm",
     accuracy: Math.round(stats.accuracy),
-    consistency: Math.round(stats.consistency),
     chars: `${stats.correct}/${stats.incorrect}/${stats.extra}`,
+    指标: buildChineseMetricsArchive(stats, { elapsed: state.elapsed }),
     chart,
     missed
   };
@@ -841,13 +1044,12 @@ function buildResultChartData(stats) {
 
 function findMissedWords(typed, target) {
   const targetWords = target.split(" ");
-  const typedWords = typed.split(" ");
   const missed = [];
   let cursor = 0;
   for (let index = 0; index < targetWords.length; index += 1) {
     const targetWord = targetWords[index];
     const typedWord = typed.slice(cursor, cursor + targetWord.length);
-    if (typedWord && typedWord !== targetWord) missed.push(targetWord.replace(/[^\w'-]/g, ""));
+    if (typedWord && !isTypedTextCorrect(typedWord, targetWord)) missed.push(targetWord.replace(/[^\w'-]/g, ""));
     cursor += targetWord.length + 1;
   }
   return [...new Set(missed.filter(Boolean))].slice(0, 12);
@@ -862,14 +1064,14 @@ function showResult(record, stats, missed) {
 }
 
 function showStoredResult(record, missed = record.missed || []) {
-  const pb = getPersonalBest(record.label);
+  const pb = getPersonalBest(record);
   const chart = record.chart?.samples?.length ? record.chart : buildRecordChartFallback(record);
+  const metrics = getRecordDisplayMetrics(record);
   els.resultTitle.textContent = getRecordLabel(record);
-  els.resultWpm.textContent = String(getRecordSpeed(record));
-  els.resultAcc.textContent = `${record.accuracy}%`;
-  els.resultRaw.textContent = `原始速度 ${getRecordRaw(record)}`;
-  els.resultConsistency.textContent = `稳定性 ${record.consistency}%`;
-  els.resultChars.textContent = `字符 ${record.chars || "0/0/0"}`;
+  els.resultWpm.textContent = String(metrics.speed);
+  els.resultAcc.textContent = `${metrics.accuracy}%`;
+  els.resultRaw.textContent = `原始速度 ${metrics.raw} 字符/分`;
+  els.resultChars.textContent = `字符 ${metrics.charsText}`;
   els.resultType.textContent = getRecordLabel(record);
   els.resultPb.textContent = pb ? `最佳 ${getRecordSpeed(pb)} 字符/分` : "最佳 -";
   renderResultChart(chart);
@@ -1058,9 +1260,9 @@ function buildTimeTicks(duration, count) {
   return ticks;
 }
 
-function getPersonalBest(label) {
+function getPersonalBest(record) {
   return state.history
-    .filter((record) => record.label === label && record.type !== "practice")
+    .filter((item) => item.label === record.label && item.type === record.type)
     .sort((a, b) => getRecordSpeed(b) - getRecordSpeed(a) || b.accuracy - a.accuracy)[0];
 }
 
@@ -1074,6 +1276,48 @@ function getRecordRaw(record) {
   if (record?.speedUnit === "cpm") return Math.round(record.raw || 0);
   const legacy = getLegacyTimedRecordStats(record);
   return legacy ? legacy.raw : Math.round(record?.raw || 0);
+}
+
+function getRecordDisplayMetrics(record) {
+  const chinese = record?.指标 || {};
+  const chars = parseRecordChars(record?.chars) || parseRecordChars(chinese["字符统计"]) || {
+    correct: Number(chinese["正确字符"] || 0),
+    incorrect: Number(chinese["错误字符"] || 0),
+    extra: Number(chinese["多余字符"] || 0)
+  };
+  const speed = Number(chinese["速度（字符/分）"]);
+  const raw = Number(chinese["原始速度（字符/分）"]);
+  const accuracy = Number.parseInt(String(chinese["准确率"] || record?.accuracy || 0), 10);
+  return {
+    speed: Number.isFinite(speed) ? Math.round(speed) : getRecordSpeed(record),
+    raw: Number.isFinite(raw) ? Math.round(raw) : getRecordRaw(record),
+    accuracy: Number.isFinite(accuracy) ? Math.round(accuracy) : Math.round(record?.accuracy || 0),
+    chars,
+    charsText: `${chars.correct || 0}/${chars.incorrect || 0}/${chars.extra || 0}`
+  };
+}
+
+function buildChineseMetricsArchive(stats, options = {}) {
+  const correct = Math.round(stats.correct || 0);
+  const incorrect = Math.round(stats.incorrect || 0);
+  const extra = Math.round(stats.extra || 0);
+  const metrics = {
+    "速度（字符/分）": Math.round(stats.wpm || 0),
+    "原始速度（字符/分）": Math.round(stats.raw || 0),
+    "准确率": `${Math.round(stats.accuracy || 0)}%`,
+    "正确字符": correct,
+    "错误字符": incorrect,
+    "多余字符": extra,
+    "字符统计": `${correct}/${incorrect}/${extra}`
+  };
+  if (Number.isFinite(options.elapsed)) metrics["总用时（秒）"] = Number(options.elapsed.toFixed(3));
+  if (Number.isFinite(options.segmentElapsed)) metrics["本段用时（秒）"] = Number(options.segmentElapsed.toFixed(3));
+  if (options.overallStats) {
+    metrics["整场速度（字符/分）"] = Math.round(options.overallStats.wpm || 0);
+    metrics["整场原始速度（字符/分）"] = Math.round(options.overallStats.raw || 0);
+    metrics["整场准确率"] = `${Math.round(options.overallStats.accuracy || 0)}%`;
+  }
+  return metrics;
 }
 
 function getLegacyTimedRecordStats(record) {
@@ -1125,6 +1369,10 @@ function buildFingerGuides() {
   [els.testFingerGuide, els.practiceFingerGuide].forEach((guide) => {
     if (!guide) return;
     guide.innerHTML = `
+      <div class="finger-drag-handle" data-guide-drag-handle title="按住拖动指法提示">
+        <span>指法提示</span>
+        <button class="finger-guide-reset" data-guide-reset type="button" title="恢复默认位置">复位</button>
+      </div>
       ${renderFingerHands()}
       <div class="finger-guide-head">
         <div>
@@ -1142,6 +1390,148 @@ function buildFingerGuides() {
       </div>
     `;
   });
+  requestAnimationFrame(() => applyFingerGuidePosition(state.view));
+}
+
+function loadGuidePositions() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GUIDE_POSITION_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveGuidePositions() {
+  try {
+    localStorage.setItem(GUIDE_POSITION_KEY, JSON.stringify(guidePositions));
+  } catch (error) {
+    console.warn("Unable to write finger guide position", error);
+  }
+}
+
+function getGuideForView(view) {
+  if (view === "practice") return els.practiceFingerGuide;
+  if (view === "test") return els.testFingerGuide;
+  return null;
+}
+
+function getGuideView(guide) {
+  if (guide === els.practiceFingerGuide) return "practice";
+  if (guide === els.testFingerGuide) return "test";
+  return "";
+}
+
+function getGuideSize(guide) {
+  const rect = guide.getBoundingClientRect();
+  const width = rect.width || Math.min(760, window.innerWidth - 32);
+  const height = rect.height || 280;
+  return { width, height };
+}
+
+function clampGuidePosition(guide, x, y) {
+  const { width, height } = getGuideSize(guide);
+  const padding = 10;
+  const maxX = Math.max(padding, window.innerWidth - width - padding);
+  const maxY = Math.max(padding, window.innerHeight - height - padding);
+  return {
+    x: clamp(Number(x) || padding, padding, maxX),
+    y: clamp(Number(y) || padding, padding, maxY)
+  };
+}
+
+function getDefaultGuidePosition(guide) {
+  const { width, height } = getGuideSize(guide);
+  const view = getGuideView(guide);
+  const surface = view === "practice" ? els.practiceSurface : els.typeSurface;
+  const surfaceRect = surface?.getBoundingClientRect();
+  const x = window.innerWidth <= 760 ? 12 : window.innerWidth - width - 18;
+  let y = 88;
+
+  if (surfaceRect?.width && window.innerWidth > 760) {
+    const aboveSurface = surfaceRect.top - height - 12;
+    const belowSurface = surfaceRect.bottom + 12;
+    if (aboveSurface >= 72) {
+      y = aboveSurface;
+    } else if (belowSurface + height <= window.innerHeight - 10) {
+      y = belowSurface;
+    }
+  } else if (window.innerWidth <= 760) {
+    y = Math.max(12, window.innerHeight - height - 12);
+  }
+
+  return clampGuidePosition(guide, x, y);
+}
+
+function setFingerGuidePosition(guide, position) {
+  if (!guide) return;
+  const next = clampGuidePosition(guide, position?.x, position?.y);
+  guide.style.left = `${Math.round(next.x)}px`;
+  guide.style.top = `${Math.round(next.y)}px`;
+  guide.style.right = "auto";
+  guide.style.bottom = "auto";
+  guide.style.transform = "none";
+}
+
+function applyFingerGuidePosition(view) {
+  const guide = getGuideForView(view);
+  if (!guide) return;
+  const position = guidePositions[view] || getDefaultGuidePosition(guide);
+  setFingerGuidePosition(guide, position);
+}
+
+function resetFingerGuidePosition(guide, shouldSave = true) {
+  const view = getGuideView(guide);
+  if (!view) return;
+  const position = getDefaultGuidePosition(guide);
+  guidePositions = { ...guidePositions, [view]: position };
+  setFingerGuidePosition(guide, position);
+  if (shouldSave) saveGuidePositions();
+}
+
+function startFingerGuideDrag(event) {
+  const handle = event.target.closest("[data-guide-drag-handle]");
+  if (!handle || event.target.closest("[data-guide-reset]")) return;
+  const guide = handle.closest(".finger-guide");
+  const view = getGuideView(guide);
+  if (!guide || !view) return;
+
+  const rect = guide.getBoundingClientRect();
+  guideDragState.guide = guide;
+  guideDragState.view = view;
+  guideDragState.startPointerX = event.clientX;
+  guideDragState.startPointerY = event.clientY;
+  guideDragState.startX = rect.left;
+  guideDragState.startY = rect.top;
+  guide.classList.add("is-dragging");
+  handle.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+}
+
+function moveFingerGuideDrag(event) {
+  if (!guideDragState.guide) return;
+  const x = guideDragState.startX + event.clientX - guideDragState.startPointerX;
+  const y = guideDragState.startY + event.clientY - guideDragState.startPointerY;
+  const position = clampGuidePosition(guideDragState.guide, x, y);
+  setFingerGuidePosition(guideDragState.guide, position);
+  guidePositions = { ...guidePositions, [guideDragState.view]: position };
+}
+
+function stopFingerGuideDrag() {
+  if (!guideDragState.guide) return;
+  guideDragState.guide.classList.remove("is-dragging");
+  saveGuidePositions();
+  guideDragState.guide = null;
+  guideDragState.view = "";
+  requestAnimationFrame(focusActiveTypingSurface);
+}
+
+function handleFingerGuideReset(event) {
+  const button = event.target.closest("[data-guide-reset]");
+  if (!button) return;
+  const guide = button.closest(".finger-guide");
+  resetFingerGuidePosition(guide);
+  requestAnimationFrame(focusActiveTypingSurface);
 }
 
 function renderFingerHands() {
@@ -1181,8 +1571,20 @@ function renderHandPicture(hand, label) {
 
 function renderFingerKey(key) {
   const info = KEY_FINGERS[key] || KEY_FINGERS[normalizeGuideKey(key)];
-  const label = key === "space" ? "space" : key === "delete" ? "delete" : key.toUpperCase();
-  const sizeClass = key === "space" ? "finger-key-space" : key === "delete" ? "finger-key-delete" : "";
+  const label = key === "space"
+    ? "space"
+    : key === "delete"
+      ? "delete"
+      : key.includes("shift")
+        ? "shift"
+        : key.toUpperCase();
+  const sizeClass = key === "space"
+    ? "finger-key-space"
+    : key === "delete"
+      ? "finger-key-delete"
+      : key.includes("shift")
+        ? "finger-key-shift"
+        : "";
   return `
     <span class="finger-key finger-${info?.group || "unknown"} ${sizeClass}" data-key="${escapeHtml(key)}">
       ${escapeHtml(label)}
@@ -1190,45 +1592,84 @@ function renderFingerKey(key) {
   `;
 }
 
+function getGuideKeyInfo(char) {
+  const shown = displayGuideChar(char);
+  const normalized = normalizeGuideKey(char);
+  const keyInfo = KEY_FINGERS[normalized];
+  if (!char || !normalized || !keyInfo) {
+    return { keys: [], infos: [], shown, instruction: "暂未收录该字符的指法" };
+  }
+
+  const shiftNeeded = needsShiftForGuide(char);
+  const shiftKey = shiftNeeded ? getOppositeShiftKey(keyInfo) : "";
+  const keys = shiftKey ? [shiftKey, normalized] : [normalized];
+  const infos = shiftKey ? [KEY_FINGERS[shiftKey], keyInfo] : [keyInfo];
+  const instruction = shiftKey
+    ? `按住 ${KEY_FINGERS[shiftKey].hand}${KEY_FINGERS[shiftKey].finger} Shift，使用 ${keyInfo.hand}${keyInfo.finger}`
+    : `使用 ${keyInfo.hand}${keyInfo.finger}`;
+
+  return { keys, infos, shown, instruction };
+}
+
+function needsShiftForGuide(char) {
+  if (/^[A-Z]$/.test(char)) return true;
+  return ["?", ":", "\"", "_", "!", "@", "#", "$", "%", "^", "&", "*", "(", ")"].includes(char);
+}
+
+function getOppositeShiftKey(info) {
+  return info?.hand?.includes("右") ? "left-shift" : "right-shift";
+}
+
 function updateFingerGuide(guide, target, typed) {
   if (!guide) return;
   const errorIndex = findLastTypingErrorIndex(target, typed);
-  if (errorIndex >= 0) {
+  const current = target[typed.length] || "";
+  if (errorIndex >= 0 && errorIndex === typed.length - 1) {
     const deleteInfo = KEY_FINGERS.delete;
     const currentLabel = guide.querySelector("[data-finger-current]");
     const instruction = guide.querySelector("[data-finger-instruction]");
+    const actual = typed[errorIndex] || "";
+    const expected = target[errorIndex] || "";
+    const deleteDistance = Math.max(1, typed.length - errorIndex);
+    const deleteHint = deleteDistance > 1 ? `先退回 ${deleteDistance} 个字符` : "先删除当前字符";
+    guide.classList.add("has-error");
     updateFingerHandCue(guide, deleteInfo, true);
     guide.querySelectorAll(".finger-key").forEach((element) => {
       element.classList.toggle("is-active", element.dataset.key === "delete");
     });
     if (currentLabel) currentLabel.textContent = "Delete";
-    if (instruction) instruction.textContent = "输入有误，使用右手小拇指按 Delete";
+    if (instruction) instruction.textContent = `输入有误：实际 ${displayGuideChar(actual, true)}，目标 ${displayGuideChar(expected, true)}。${deleteHint}，使用右手小拇指按 Delete`;
     return;
   }
 
-  const current = target[typed.length] || "";
-  const key = normalizeGuideKey(current);
-  const info = KEY_FINGERS[key];
+  guide.classList.toggle("has-error", errorIndex >= 0);
+  const guideInfo = getGuideKeyInfo(current);
   const currentLabel = guide.querySelector("[data-finger-current]");
   const instruction = guide.querySelector("[data-finger-instruction]");
-  updateFingerHandCue(guide, info, Boolean(current));
+  updateFingerHandCue(guide, guideInfo.infos, Boolean(current));
 
   guide.querySelectorAll(".finger-key").forEach((element) => {
-    element.classList.toggle("is-active", Boolean(key) && element.dataset.key === key);
+    element.classList.toggle("is-active", guideInfo.keys.includes(element.dataset.key));
   });
 
   if (!current) {
     if (currentLabel) currentLabel.textContent = "完成";
-    if (instruction) instruction.textContent = "这一段已经结束";
+    if (instruction) {
+      instruction.textContent = errorIndex >= 0
+        ? `这一段已到末尾，前面还有错误，可按 Delete 回退修正`
+        : "这一段已经结束";
+    }
     return;
   }
 
-  const shown = displayGuideChar(current);
-  if (currentLabel) currentLabel.textContent = shown;
+  if (currentLabel) currentLabel.textContent = guideInfo.shown;
   if (instruction) {
-    instruction.textContent = info
-      ? `使用 ${info.hand}${info.finger}`
-      : "暂未收录该字符的指法";
+    if (errorIndex >= 0) {
+      const deleteDistance = Math.max(1, typed.length - errorIndex);
+      instruction.textContent = `下一键：${guideInfo.instruction}。前面有错误，可按 Delete 回退 ${deleteDistance} 个字符修正`;
+    } else {
+      instruction.textContent = guideInfo.instruction;
+    }
   }
 }
 
@@ -1238,16 +1679,19 @@ function updateFingerHandCue(guide, info, hasCurrent) {
   });
   if (!hasCurrent || !info) return;
 
-  if (info.group === "thumb") {
-    guide.querySelectorAll('[data-finger="thumb"]').forEach((finger) => {
-      finger.classList.add("is-active");
-    });
-    return;
-  }
+  const infos = Array.isArray(info) ? info.filter(Boolean) : [info];
+  for (const item of infos) {
+    if (item.group === "thumb") {
+      guide.querySelectorAll('[data-finger="thumb"]').forEach((finger) => {
+        finger.classList.add("is-active");
+      });
+      continue;
+    }
 
-  const hand = info.hand.includes("左") ? "left" : "right";
-  const finger = fingerNameToKey(info.finger);
-  guide.querySelector(`[data-hand="${hand}"][data-finger="${finger}"]`)?.classList.add("is-active");
+    const hand = item.hand.includes("左") ? "left" : "right";
+    const finger = fingerNameToKey(item.finger);
+    guide.querySelector(`[data-hand="${hand}"][data-finger="${finger}"]`)?.classList.add("is-active");
+  }
 }
 
 function fingerNameToKey(name) {
@@ -1262,19 +1706,81 @@ function fingerNameToKey(name) {
 function normalizeGuideKey(char) {
   if (char === " ") return "space";
   if (char === "?") return "/";
+  if (char === ":") return ";";
+  if (char === "\"" || char === "’" || char === "‘") return "'";
+  if (char === "_" || char === "–" || char === "—") return "-";
+  const shiftedNumberKeys = {
+    "!": "1",
+    "@": "2",
+    "#": "3",
+    "$": "4",
+    "%": "5",
+    "^": "6",
+    "&": "7",
+    "*": "8",
+    "(": "9",
+    ")": "0"
+  };
+  if (shiftedNumberKeys[char]) return shiftedNumberKeys[char];
   return String(char || "").toLowerCase();
 }
 
-function displayGuideChar(char) {
-  if (char === " ") return "空格";
-  return char;
+function displayGuideChar(char, detailed = false) {
+  if (char === " ") return detailed ? "普通空格 U+0020" : "空格";
+  if (char === "\u3000") return detailed ? "全角空格 U+3000" : "全角空格";
+  if (char === "\t") return detailed ? "Tab U+0009" : "Tab";
+  if (!char) return detailed ? "空字符" : "";
+  if (!detailed) return char;
+  const codePoint = char.codePointAt(0);
+  const code = codePoint === undefined ? "未知编码" : `U+${codePoint.toString(16).toUpperCase().padStart(4, "0")}`;
+  return `${char} ${code}`;
 }
 
 function findLastTypingErrorIndex(target, typed) {
   for (let index = typed.length - 1; index >= 0; index -= 1) {
-    if (typed[index] !== target[index]) return index;
+    if (!isTypedCharCorrect(typed[index], target[index])) return index;
   }
   return -1;
+}
+
+function getActiveFingerGuideContext() {
+  if (state.view === "test") {
+    return {
+      guide: els.testFingerGuide,
+      target: state.targetText,
+      typed: state.typed
+    };
+  }
+  if (state.view === "practice") {
+    return {
+      guide: els.practiceFingerGuide,
+      target: state.practiceText,
+      typed: state.practiceTyped
+    };
+  }
+  return null;
+}
+
+function refreshActiveFingerGuide() {
+  const context = getActiveFingerGuideContext();
+  if (!context) return;
+  updateFingerGuide(context.guide, context.target, context.typed);
+}
+
+function scheduleFingerGuideRefresh() {
+  if (fingerGuideSyncFrame) cancelAnimationFrame(fingerGuideSyncFrame);
+  fingerGuideSyncFrame = requestAnimationFrame(() => {
+    fingerGuideSyncFrame = 0;
+    refreshActiveFingerGuide();
+  });
+}
+
+function startFingerGuideHeartbeat() {
+  if (fingerGuideHeartbeatId) return;
+  fingerGuideHeartbeatId = window.setInterval(() => {
+    if (document.hidden || guideDragState.guide) return;
+    refreshActiveFingerGuide();
+  }, 250);
 }
 
 function renderAll() {
@@ -1284,6 +1790,7 @@ function renderAll() {
   renderMetrics(stats);
   renderTopLabels(elapsed);
   updateFingerGuide(els.testFingerGuide, state.targetText, state.typed);
+  scheduleFingerGuideRefresh();
   requestAnimationFrame(() => positionTypingBird(els.typingBird));
 }
 
@@ -1295,7 +1802,7 @@ function renderTypingCopy(container, target, typed) {
     const typedChar = typed[index];
     const classes = ["char"];
     if (index === typed.length) classes.push("current");
-    if (typedChar !== undefined) classes.push(typedChar === expected ? "correct" : "incorrect");
+    if (typedChar !== undefined) classes.push(isTypedCharCorrect(typedChar, expected) ? "correct" : "incorrect");
     html += `<span class="${classes.join(" ")}">${escapeHtml(expected)}</span>`;
   }
   if (typed.length >= safeTarget.length) {
@@ -1320,7 +1827,6 @@ function renderMetrics(stats) {
   els.wpmMetric.textContent = String(Math.round(stats.wpm));
   els.rawMetric.textContent = String(Math.round(stats.raw));
   els.accuracyMetric.textContent = `${Math.round(stats.accuracy)}%`;
-  els.consistencyMetric.textContent = `${Math.round(stats.consistency)}%`;
   els.charReadout.textContent = `${stats.correct} / ${stats.incorrect} / ${stats.extra}`;
 }
 
@@ -1333,7 +1839,7 @@ function renderTopLabels(elapsed) {
 function renderPractice() {
   const lesson = getActiveLesson();
   const elapsed = getPracticeElapsed();
-  const stats = getStats(state.practiceTyped, state.practiceText, elapsed, state.practiceSamples);
+  const stats = getPracticeSegmentStats();
   els.lessonTitle.textContent = lesson.title;
   els.lessonFocus.textContent = isAdaptiveLesson(lesson)
     ? `${state.adaptive.stageLabel} · 目标 ${state.adaptive.targetCpm} 字符/分 / ${state.adaptive.targetAccuracy}%`
@@ -1342,24 +1848,77 @@ function renderPractice() {
     ? `等级 ${Math.round(state.adaptive.level)} · 达标 ${state.adaptive.streak || 0}/2`
     : `已完成 ${state.practice[lesson.id]?.completed || 0} 次`;
   const weak = state.weakWords.slice(0, 3).join(", ") || "暂无";
-  els.lessonWeak.textContent = `弱项：${weak}`;
+  renderPracticeMonitor(stats, lesson);
+  renderAdaptiveLevelStatus(stats, lesson);
+  els.lessonWeak.textContent = weak;
   if (els.lessonCoach) {
     const status = state.adaptive.pending ? "生成下一组中" : state.adaptive.coachMessage;
-    els.lessonCoach.textContent = isAdaptiveLesson(lesson) ? `教练：${status}` : "教练：手动课程";
+    els.lessonCoach.textContent = isAdaptiveLesson(lesson) ? status : "手动课程";
   }
-  renderPracticeMetrics(stats);
   renderPracticeTopLabels(elapsed, lesson);
   renderTypingCopy(els.practiceCopy, state.practiceText, state.practiceTyped);
   els.practiceReadout.textContent = `${stats.correct} / ${stats.incorrect} / ${stats.extra}`;
   updateFingerGuide(els.practiceFingerGuide, state.practiceText, state.practiceTyped);
+  scheduleFingerGuideRefresh();
   requestAnimationFrame(() => positionTypingBird(els.practiceBird));
 }
 
-function renderPracticeMetrics(stats) {
-  els.practiceWpmMetric.textContent = String(Math.round(stats.wpm));
-  els.practiceRawMetric.textContent = String(Math.round(stats.raw));
-  els.practiceAccuracyMetric.textContent = `${Math.round(stats.accuracy)}%`;
-  els.practiceConsistencyMetric.textContent = `${Math.round(stats.consistency)}%`;
+function renderPracticeMonitor(stats, lesson) {
+  if (!els.lessonMonitor) return;
+  const speed = Math.round(stats.wpm);
+  const raw = Math.round(stats.raw);
+  const accuracy = Math.round(stats.accuracy);
+  if (!stats.monitoredChars) {
+    setPracticeMonitorCards(0, 0, 100, "等待输入");
+    return;
+  }
+  if (!isAdaptiveLesson(lesson)) {
+    setPracticeMonitorCards(speed, raw, accuracy, "实时监测");
+    return;
+  }
+  const speedOk = stats.wpm >= state.adaptive.targetCpm;
+  const accuracyOk = stats.accuracy >= state.adaptive.targetAccuracy;
+  const status = speedOk && accuracyOk ? "当前达标" : "监测中";
+  setPracticeMonitorCards(speed, raw, accuracy, status);
+}
+
+function setPracticeMonitorCards(speed, raw, accuracy, status) {
+  if (els.lessonMonitorWpm) els.lessonMonitorWpm.textContent = String(speed);
+  if (els.lessonMonitorRaw) els.lessonMonitorRaw.textContent = String(raw);
+  if (els.lessonMonitorAccuracy) els.lessonMonitorAccuracy.textContent = `${accuracy}%`;
+  if (els.lessonMonitorStatus) els.lessonMonitorStatus.textContent = status;
+}
+
+function renderAdaptiveLevelStatus(stats, lesson) {
+  if (!els.levelStatusPanel) return;
+  const adaptive = isAdaptiveLesson(lesson);
+  els.levelStatusPanel.hidden = !adaptive;
+  if (!adaptive) return;
+
+  const level = Math.round(state.adaptive.level || 1);
+  const targetCpm = Math.round(state.adaptive.targetCpm || 0);
+  const targetAccuracy = Math.round(state.adaptive.targetAccuracy || 0);
+  const streak = clamp(Math.round(state.adaptive.streak || 0), 0, 2);
+  const speed = Math.round(stats.wpm || 0);
+  const accuracy = Math.round(stats.accuracy || 100);
+  const speedGap = Math.max(0, targetCpm - speed);
+  const accuracyGap = Math.max(0, targetAccuracy - accuracy);
+  const statusParts = [];
+
+  if (!stats.monitoredChars) {
+    statusParts.push(`连续 2 段达到 ${targetCpm} 字符/分和 ${targetAccuracy}%`);
+  } else {
+    if (speedGap) statusParts.push(`速度还差 ${speedGap} 字符/分`);
+    if (accuracyGap) statusParts.push(`准确率还差 ${accuracyGap}%`);
+    if (!speedGap && !accuracyGap) statusParts.push("本段已达到当前目标");
+  }
+
+  if (streak < 2) statusParts.push(`还需 ${2 - streak} 段达标`);
+
+  els.levelStatusBadge.textContent = `等级 ${level} · ${state.adaptive.stageLabel}`;
+  els.levelStatusTarget.textContent = `${targetCpm} 字符/分 · ${targetAccuracy}%`;
+  els.levelStatusProgress.textContent = `${streak}/2 段`;
+  els.levelStatusNext.textContent = statusParts.join("，");
 }
 
 function renderPracticeTopLabels(elapsed, lesson) {
@@ -1400,6 +1959,14 @@ function getAdaptiveStage(level = state.adaptive.level) {
   return ADAPTIVE_STAGES[5];
 }
 
+function getAdaptiveTargetAccuracy(level) {
+  return clamp(94 + Math.min(4, Math.floor(Number(level || 1) / 2)), 94, 98);
+}
+
+function getAdaptiveTargetCpm(level) {
+  return clamp(60 + Number(level || 1) * 18, 70, 240);
+}
+
 function sanitizePracticeText(text) {
   return String(text || "")
     .replace(/[^A-Za-z0-9 ,.;?'\-]/g, " ")
@@ -1407,36 +1974,236 @@ function sanitizePracticeText(text) {
     .trim();
 }
 
-function getAdaptiveWordBank() {
-  const level = Math.round(state.adaptive.level || 1);
-  const stage = getAdaptiveStage(level);
-  const weak = state.weakWords
-    .filter(Boolean)
-    .flatMap((word) => [word, word])
-    .slice(0, 24);
-  const base = stage.words || COMMON_WORDS;
-  const extra = level >= 4 ? COMMON_WORDS.slice(0, 120) : [];
-  const advanced = level >= 6 ? ADVANCED_WORDS.slice(0, 40) : [];
-  return [...new Set([...weak, ...base, ...extra, ...advanced])].filter(Boolean);
+function cleanPracticeWord(value) {
+  return String(value || "")
+    .replace(/[^\w'-]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
-function decorateAdaptiveWord(word, index) {
+function collectRecentAdaptiveWordStats(summary = null) {
+  const stats = [];
+  state.history
+    .filter((record) => record.type === "practice" && record.lessonId === ADAPTIVE_LESSON_ID)
+    .slice(-24)
+    .forEach((record) => {
+      if (Array.isArray(record.wordStats)) stats.push(...record.wordStats);
+    });
+  if (Array.isArray(summary?.wordStats)) stats.push(...summary.wordStats);
+  return stats;
+}
+
+function buildProtectedPracticeWords(summary = null) {
+  return new Set([
+    ...state.weakWords.map(cleanPracticeWord),
+    ...((summary?.missedWords || summary?.missed || []).map(cleanPracticeWord)),
+    ...((summary?.slowWords || []).map((item) => cleanPracticeWord(item.word || item)))
+  ].filter(Boolean));
+}
+
+function buildMasteredWordEntries(summary = null) {
+  const protectedWords = buildProtectedPracticeWords(summary);
+  const entries = new Map();
+
+  for (const word of state.adaptive.masteredWords || []) {
+    const clean = cleanPracticeWord(word);
+    if (!clean || protectedWords.has(clean)) continue;
+    entries.set(clean, { word: clean, score: 2, streak: 2, lastSeen: 0 });
+  }
+
+  collectRecentAdaptiveWordStats(summary).forEach((item, index) => {
+    const word = cleanPracticeWord(item.word);
+    if (!word || word.length < 2) return;
+    if (protectedWords.has(word)) {
+      entries.delete(word);
+      return;
+    }
+
+    const avgDelayMs = Number(item.avgDelayMs || 0);
+    const fastEnough = !avgDelayMs || avgDelayMs <= 330;
+    const cleanAttempt = Number(item.attempts || 0) >= Math.max(1, word.length - 1);
+    const current = entries.get(word) || { word, score: 0, streak: 0, lastSeen: 0 };
+
+    if (item.correct && cleanAttempt && (item.errors || 0) === 0 && fastEnough) {
+      current.streak += 1;
+      current.score += 1;
+    } else if ((item.errors || 0) > 0 || item.correct === false) {
+      current.streak = 0;
+      current.score -= 2;
+    } else {
+      current.streak = 0;
+      current.score -= 1;
+    }
+
+    current.score = clamp(current.score, -3, 5);
+    current.lastSeen = index + 1;
+    if (current.score <= 0) {
+      entries.delete(word);
+    } else {
+      entries.set(word, current);
+    }
+  });
+
+  return [...entries.values()]
+    .filter((item) => item.streak >= 2 || item.score >= 2)
+    .sort((a, b) => b.streak - a.streak || b.score - a.score || b.lastSeen - a.lastSeen || a.word.localeCompare(b.word))
+    .slice(0, MASTERED_WORD_LIMIT);
+}
+
+function buildMasteredWords(summary = null) {
+  return buildMasteredWordEntries(summary).map((item) => item.word);
+}
+
+function getAdaptiveCandidateWords() {
+  return [...new Set([
+    ...state.weakWords,
+    ...ADAPTIVE_STAGES.flatMap((stage) => stage.words || []),
+    ...COMMON_WORDS,
+    ...ADVANCED_WORDS
+  ].map(cleanPracticeWord))]
+    .filter((word) => word.length >= 2 && word.length <= 16);
+}
+
+function collectRecentAdaptiveKeyStats(summary = null) {
+  const stats = [];
+  if (Array.isArray(summary?.keyStats)) stats.push(...summary.keyStats);
+  state.history
+    .filter((record) => record.type === "practice" && record.lessonId === ADAPTIVE_LESSON_ID)
+    .slice(-8)
+    .forEach((record) => {
+      if (Array.isArray(record.keyStats)) stats.push(...record.keyStats);
+    });
+  return stats;
+}
+
+function buildSimilarKeyHints(summary = null, masteredWords = []) {
+  const mastered = new Set(masteredWords.map(cleanPracticeWord));
+  const keyWeights = new Map();
+
+  for (const item of collectRecentAdaptiveKeyStats(summary)) {
+    const key = normalizeGuideKey(item.key);
+    if (!key || key.length !== 1) continue;
+    const errors = Number(item.errors || 0);
+    const avgDelayMs = Number(item.avgDelayMs || 0);
+    if (!errors && avgDelayMs < 340) continue;
+    const weight = errors * 3 + Math.max(0, avgDelayMs - 260) / 80 + 1;
+    keyWeights.set(key, (keyWeights.get(key) || 0) + weight);
+    (KEY_NEIGHBORS[key] || []).forEach((neighbor) => {
+      keyWeights.set(neighbor, (keyWeights.get(neighbor) || 0) + weight * 0.65);
+    });
+  }
+
+  if (!keyWeights.size) {
+    state.adaptive.focusKeys
+      .map(normalizeGuideKey)
+      .filter((key) => key && key.length === 1)
+      .forEach((key) => {
+        keyWeights.set(key, 1);
+        (KEY_NEIGHBORS[key] || []).forEach((neighbor) => keyWeights.set(neighbor, 0.65));
+      });
+  }
+
+  if (!keyWeights.size) return [];
+
+  return getAdaptiveCandidateWords()
+    .filter((word) => !mastered.has(word))
+    .map((word) => {
+      const score = [...word].reduce((sum, char) => sum + (keyWeights.get(char) || 0), 0);
+      return { word, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.word.length - b.word.length || a.word.localeCompare(b.word))
+    .map((item) => item.word)
+    .slice(0, 60);
+}
+
+function getAdaptiveWordBank(summary = null) {
   const level = Math.round(state.adaptive.level || 1);
-  let next = word;
-  if (level >= 5 && index % 8 === 5) next += randomItem([",", ".", ";", "?"]);
-  if (level >= 6 && index % 10 === 6) next = `${next} ${Math.floor(10 + Math.random() * 90)}`;
-  if (level >= 7 && index % 12 === 7) next = randomItem(ADVANCED_WORDS);
-  return next;
+  const stage = getAdaptiveStage(level);
+  const masteredWords = buildMasteredWords(summary);
+  const mastered = new Set(masteredWords);
+  const protectedWords = buildProtectedPracticeWords(summary);
+  const similarHints = buildSimilarKeyHints(summary, masteredWords);
+  const weak = state.weakWords
+    .map(cleanPracticeWord)
+    .filter((word) => word && !mastered.has(word))
+    .flatMap((word) => [word, word])
+    .slice(0, 36);
+  const base = stage.words || COMMON_WORDS;
+  const extra = level >= 4 ? COMMON_WORDS.slice(0, 180) : [];
+  const advanced = level >= 6 ? ADVANCED_WORDS.slice(0, 64) : [];
+  const weightedHints = similarHints.flatMap((word) => [word, word, word]).slice(0, 72);
+  const filtered = [...weak, ...weightedHints, ...base, ...extra, ...advanced]
+    .map(cleanPracticeWord)
+    .filter(Boolean)
+    .filter((word) => protectedWords.has(word) || weak.includes(word) || similarHints.includes(word) || !mastered.has(word));
+  if (filtered.length) return filtered;
+
+  const fallback = getAdaptiveCandidateWords()
+    .filter((word) => !mastered.has(word))
+    .slice(0, 72);
+  return fallback.length ? fallback : getAdaptiveCandidateWords().slice(0, 24);
+}
+
+function selectAdaptivePracticeWords(bank, count) {
+  const selected = [];
+  const seen = new Set();
+  for (const word of shuffle(bank)) {
+    const clean = cleanPracticeWord(word);
+    if (!clean || seen.has(clean)) continue;
+    selected.push(clean);
+    seen.add(clean);
+    if (selected.length >= count) break;
+  }
+  return selected.length ? selected : bank.map(cleanPracticeWord).filter(Boolean).slice(0, count);
 }
 
 function generateAdaptivePracticeChunk(lineCount = 8) {
   const bank = getAdaptiveWordBank();
-  const wordCount = clamp(lineCount * 7, 18, 70);
-  const words = [];
-  for (let index = 0; index < wordCount; index += 1) {
-    words.push(decorateAdaptiveWord(randomItem(bank), index));
+  const wordCount = clamp(lineCount * 10, 42, 90);
+  const words = selectAdaptivePracticeWords(bank, wordCount);
+  return buildLocalAdaptiveSentenceText(words, Math.round(state.adaptive.level || 1));
+}
+
+function buildLocalAdaptiveSentenceText(words, level) {
+  const cleanWords = [...new Set(words.map(cleanPracticeWord).filter(Boolean))];
+  if (!cleanWords.length) return "";
+  const numbers = [3, 5, 8, 12, 15, 18, 24, 30, 42, 60, 75, 90];
+  const templates = [
+    (a, b, c, n) => `At ${n}, ${a} came before ${b}; ${c} came next.`,
+    (a, b, c, n) => `After ${n} tries, ${a} felt clear, but ${b} needed ${c}.`,
+    (a, b, c, n) => `Don't rush; use ${a}, then ${b}, then ${c}.`,
+    (a, b, c, n) => `When ${n} seconds passed, ${a} and ${b} felt easier.`,
+    (a, b, c, n) => `${a} wasn't ${b}; it was ${c}.`,
+    (a, b, c, n) => `By ${n}, ${a}, ${b}, and ${c} stayed in order.`,
+    (a, b, c, n) => `If ${a} looks wrong, try ${b} before ${c}.`,
+    (a, b, c, n) => `${a} is quick; ${b} is careful; ${c} is steady.`,
+    (a, b, c, n) => `For ${n} seconds, ${a} moved near ${b} and ${c}.`,
+    (a, b, c, n) => `Use ${a}-first, pause at ${b}, and end with ${c}.`,
+    (a, b, c, n) => `${a} can lead, ${b} can follow, and ${c} can close.`,
+    (a, b, c, n) => `If ${a} is easy now, skip it and spend ${n} seconds on ${c}.`,
+    (a, b, c, n) => `${a}, ${b}, and ${c} should feel clean by ${n}.`,
+    (a, b, c, n) => `Start with ${a}; shift to ${b}; settle on ${c}.`,
+    (a, b, c, n) => `A ${n}-second pass used ${a}, ${b}, and ${c}.`,
+    (a, b, c, n) => `${a} stayed calm, ${b} stayed short, and ${c} stayed exact.`
+  ];
+  const sentences = [];
+  let cursor = 0;
+  while (sentences.join(" ").length < 620 && sentences.length < lineCountForLevel(level)) {
+    const a = cleanWords[cursor % cleanWords.length];
+    const b = cleanWords[(cursor + 1) % cleanWords.length] || a;
+    const c = cleanWords[(cursor + 2) % cleanWords.length] || b;
+    const n = numbers[(cursor + level) % numbers.length];
+    sentences.push(templates[(sentences.length + level) % templates.length](a, b, c, n));
+    cursor += 3;
   }
-  return sanitizePracticeText(words.join(" "));
+  return sanitizePracticeText(sentences.join(" "));
+}
+
+function lineCountForLevel(level) {
+  if (level >= 6) return 14;
+  if (level >= 4) return 12;
+  return 10;
 }
 
 function takeAdaptivePracticeText(lineCount = 4) {
@@ -1477,6 +2244,7 @@ function preparePracticeLine(next = false) {
   state.practiceSamples = [];
   state.practiceSampleCursor = 0;
   state.practiceCheckpoint = 0;
+  state.practiceMonitorStartTime = null;
   state.practiceKeyEvents = [];
   state.practiceLastKeyAt = 0;
   if (isAdaptiveLesson(lesson)) state.adaptiveNextText = "";
@@ -1529,7 +2297,7 @@ function recordPracticeKeyEvent(key, position, expected) {
     position,
     elapsed: Number(elapsed.toFixed(3)),
     delayMs: Math.round(delayMs),
-    correct: key === expected
+    correct: isTypedCharCorrect(key, expected)
   });
   if (state.practiceKeyEvents.length > 1200) state.practiceKeyEvents = state.practiceKeyEvents.slice(-900);
 }
@@ -1561,8 +2329,10 @@ function buildPracticeSegmentSummary(segmentStart, segmentEnd, stats, missed) {
     targetAccuracy: state.adaptive.targetAccuracy,
     targetCpm: state.adaptive.targetCpm,
     elapsed: Number(getPracticeElapsed().toFixed(3)),
+    segmentElapsed: Number((stats.elapsed || 0).toFixed(3)),
     segmentStart,
     segmentEnd,
+    monitoredChars: stats.monitoredChars || Math.max(0, segmentEnd - segmentStart),
     chars: {
       correct: stats.correct,
       incorrect: stats.incorrect,
@@ -1571,11 +2341,10 @@ function buildPracticeSegmentSummary(segmentStart, segmentEnd, stats, missed) {
     cpm: Math.round(stats.wpm),
     raw: Math.round(stats.raw),
     accuracy: Math.round(stats.accuracy),
-    consistency: Math.round(stats.consistency),
     deletes: segmentEvents.filter((event) => event.type === "delete").length,
     missedWords: missed,
     slowWords,
-    wordStats: wordStats.slice(0, 18),
+    wordStats: wordStats.slice(0, 48),
     keyStats,
     fingerStats
   };
@@ -1586,7 +2355,7 @@ function buildSegmentWordStats(segmentStart, segmentEnd, events) {
   return boundaries.map((word) => {
     const wordEvents = events.filter((event) => event.type === "char" && event.position >= word.start && event.position < word.end);
     const typedWord = state.practiceTyped.slice(word.start, Math.min(word.end, state.practiceTyped.length));
-    const errors = wordEvents.filter((event) => !event.correct).length + (typedWord && typedWord !== word.text ? 1 : 0);
+    const errors = wordEvents.filter((event) => !event.correct).length + (typedWord && !isTypedTextCorrect(typedWord, word.text) ? 1 : 0);
     const delayValues = wordEvents.map((event) => event.delayMs).filter((value) => value > 0);
     const avgDelayMs = delayValues.length
       ? Math.round(delayValues.reduce((sum, value) => sum + value, 0) / delayValues.length)
@@ -1597,7 +2366,7 @@ function buildSegmentWordStats(segmentStart, segmentEnd, events) {
       attempts: wordEvents.length,
       errors,
       avgDelayMs,
-      correct: typedWord === word.text
+      correct: isTypedTextCorrect(typedWord, word.text)
     };
   }).filter((item) => item.word);
 }
@@ -1666,10 +2435,10 @@ function buildSegmentFingerStats(events) {
 function updateLocalAdaptiveState(summary) {
   const metAccuracy = summary.accuracy >= state.adaptive.targetAccuracy;
   const metSpeed = summary.cpm >= state.adaptive.targetCpm;
-  const metConsistency = summary.consistency >= 68;
   const next = { ...state.adaptive, pending: false, source: "local" };
+  const nextStuck = (next.stuck || 0) + 1;
 
-  if (metAccuracy && metSpeed && metConsistency) {
+  if (metAccuracy && metSpeed) {
     next.streak = (next.streak || 0) + 1;
     next.stuck = 0;
     next.decision = next.streak >= 2 ? "advance" : "hold";
@@ -1680,18 +2449,18 @@ function updateLocalAdaptiveState(summary) {
     next.coachMessage = next.decision === "advance"
       ? "本轮达标，下一组会提高一点难度。"
       : "这轮达标，再稳定一轮就升级。";
-  } else if (summary.accuracy < 88 || (next.stuck || 0) >= 4) {
+  } else if (summary.accuracy < 88 || (nextStuck >= 6 && summary.accuracy < state.adaptive.targetAccuracy - 4)) {
     next.level = clamp(Math.round(next.level || 1) - 1, 1, 7);
     next.streak = 0;
     next.stuck = 0;
     next.decision = "downgrade";
-    next.coachMessage = "当前难度有些吃力，先回到更稳的内容练准。";
+    next.coachMessage = "当前准确率有些吃力，先回到更稳的内容练准。";
   } else {
     next.streak = 0;
-    next.stuck = (next.stuck || 0) + 1;
+    next.stuck = nextStuck;
     next.decision = summary.accuracy >= 94 ? "focus" : "hold";
-    next.coachMessage = summary.accuracy >= 94
-      ? "准确率接近达标，下一组会加强慢词和弱项键位。"
+    next.coachMessage = metAccuracy && !metSpeed
+      ? "准确率已经达标，下一组会加强速度和慢词，不会仅因速度未达标降级。"
       : "先把准确率稳住，再继续提速。";
   }
 
@@ -1700,19 +2469,45 @@ function updateLocalAdaptiveState(summary) {
   next.stageLabel = stage.label;
   next.focusKeys = summary.keyStats.slice(0, 6).map((item) => item.key);
   next.focusFingers = summary.fingerStats.slice(0, 4).map((item) => item.finger);
-  next.targetAccuracy = clamp(94 + Math.min(4, Math.floor(next.level / 2)), 94, 98);
-  next.targetCpm = clamp(60 + next.level * 18, 70, 240);
+  next.targetAccuracy = getAdaptiveTargetAccuracy(next.level);
+  next.targetCpm = getAdaptiveTargetCpm(next.level);
+  next.masteredWords = buildMasteredWords(summary);
   state.adaptive = normalizeAdaptiveState(next);
 }
 
-function applyAdaptivePlan(plan) {
+function applyAdaptivePlan(plan, summary = null) {
   if (!plan || typeof plan !== "object") return;
+  const currentLevel = Math.round(state.adaptive.level || 1);
+  const guardedPlan = { ...plan };
+  const proposedLevel = clamp(Math.round(Number(guardedPlan.level) || currentLevel), 1, 7);
+  const summaryAccuracy = Number(summary?.accuracy || 0);
+  const summaryCpm = Number(summary?.cpm || 0);
+  const summaryTargetAccuracy = Number(summary?.targetAccuracy || state.adaptive.targetAccuracy || 94);
+  const summaryTargetCpm = Number(summary?.targetCpm || state.adaptive.targetCpm || 0);
+  const speedOnlyMiss = summary && summaryAccuracy >= summaryTargetAccuracy && summaryCpm < summaryTargetCpm;
+
+  if (proposedLevel < currentLevel && (guardedPlan.decision !== "downgrade" || speedOnlyMiss)) {
+    guardedPlan.level = currentLevel;
+    guardedPlan.decision = speedOnlyMiss ? "focus" : "hold";
+    guardedPlan.coachMessage = speedOnlyMiss
+      ? "准确率已达标，继续保持当前等级并加强速度。"
+      : "继续保持当前等级，下一组会针对弱项调整。";
+  } else if (proposedLevel < currentLevel - 1) {
+    guardedPlan.level = currentLevel - 1;
+  }
+
   const next = normalizeAdaptiveState({
     ...state.adaptive,
-    ...plan,
+    ...guardedPlan,
     pending: false,
     source: "mimo"
   });
+  const stage = getAdaptiveStage(next.level);
+  next.stageId = stage.id;
+  next.stageLabel = stage.label;
+  next.targetAccuracy = getAdaptiveTargetAccuracy(next.level);
+  next.targetCpm = getAdaptiveTargetCpm(next.level);
+  next.masteredWords = buildMasteredWords(summary);
   state.adaptive = next;
   if (plan.nextText) {
     const text = sanitizePracticeText(plan.nextText);
@@ -1727,12 +2522,23 @@ function applyAdaptivePlan(plan) {
 }
 
 function buildAdaptiveRequestPayload(summary) {
+  const masteredWords = buildMasteredWords(summary);
+  const similarKeyHints = buildSimilarKeyHints(summary, masteredWords);
+  const stage = getAdaptiveStage(state.adaptive.level);
   return {
     app: "键盘侠",
     locale: "zh-CN",
     current: state.adaptive,
+    currentStage: {
+      id: stage.id,
+      label: stage.label,
+      focus: stage.focus
+    },
+    currentStageWords: (stage.words || []).slice(0, 120),
     segment: summary,
     weakWords: state.weakWords.slice(0, 24),
+    masteredWords,
+    similarKeyHints,
     recentAdaptiveRecords: state.history
       .filter((record) => record.type === "practice" && record.lessonId === ADAPTIVE_LESSON_ID)
       .slice(-6)
@@ -1742,16 +2548,20 @@ function buildAdaptiveRequestPayload(summary) {
         cpm: record.wpm,
         raw: record.raw,
         accuracy: record.accuracy,
-        consistency: record.consistency,
         missed: record.missed || [],
-        slowWords: record.slowWords || []
+        slowWords: record.slowWords || [],
+        keyStats: (record.keyStats || []).slice(0, 8),
+        wordStats: (record.wordStats || []).slice(0, 48)
       })),
     rules: {
       progression: ["基准键位控制", "上排键位伸展", "下排键位平衡", "常用英文词", "标点英文", "数字与复杂上下文"],
-      minNextTextChars: 260,
-      maxNextTextChars: 560,
-      upgradeRequires: "准确率、字符/分、稳定性连续达标",
-      downgradeWhen: "长时间不能达标或准确率明显下滑"
+      nextWordsCount: "48 到 72 个不重复英文词",
+      sentenceStyle: "服务端会把词组合成真实可能发生的英文短句，句子应包含逗号、句号、分号、问号、撇号、连字符和数字",
+      currentStageVocabulary: "优先使用 currentStageWords 和 similarKeyHints，再少量加入弱项词",
+      avoidMasteredWords: "masteredWords 是已经连续打对且速度快的词，除非同时属于 weakWords、missedWords 或 slowWords，否则下一组不要再出现",
+      prioritizeSimilarKeyHints: "错键或慢键相关的相邻键位词应该增加",
+      upgradeRequires: "准确率和字符/分连续达标",
+      downgradeWhen: "只有准确率明显吃力或连续大幅低于目标时才降级；速度未达标但准确率稳定时保持当前等级专项加练"
     }
   };
 }
@@ -1772,7 +2582,7 @@ async function requestAdaptivePracticePlan(summary) {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error || `adaptive api returned ${response.status}`);
     if (requestId !== state.adaptiveRequestId) return;
-    applyAdaptivePlan(data.plan);
+    applyAdaptivePlan(data.plan, summary);
   } catch (error) {
     if (requestId !== state.adaptiveRequestId) return;
     state.adaptive = {
@@ -1792,10 +2602,13 @@ function recordPracticeProgress() {
   const adaptive = isAdaptiveLesson();
   const chunkSize = adaptive ? ADAPTIVE_SEGMENT_CHARS : 160;
   if (state.practiceTyped.length - state.practiceCheckpoint < chunkSize) return;
+  const unresolvedErrorIndex = findLastTypingErrorIndex(state.practiceText, state.practiceTyped);
+  if (unresolvedErrorIndex >= state.practiceCheckpoint) return;
   const lesson = getActiveLesson();
-  const stats = getStats(state.practiceTyped, state.practiceText, getPracticeElapsed(), state.practiceSamples);
+  const overallStats = getStats(state.practiceTyped, state.practiceText, getPracticeElapsed());
   const segmentStart = state.practiceCheckpoint;
   const segmentEnd = state.practiceTyped.length;
+  const stats = getPracticeSegmentStats(segmentStart, segmentEnd);
   const missed = findMissedWords(
     state.practiceTyped.slice(segmentStart, segmentEnd),
     state.practiceText.slice(segmentStart, segmentEnd)
@@ -1817,25 +2630,35 @@ function recordPracticeProgress() {
     lessonTitle: lesson.title,
     lessonFocus: lesson.focus,
     elapsed: Number(getPracticeElapsed().toFixed(3)),
+    segmentElapsed: Number((stats.elapsed || 0).toFixed(3)),
     segmentStart,
     segmentEnd,
     wpm: Math.round(stats.wpm),
     raw: Math.round(stats.raw),
+    sessionWpm: Math.round(overallStats.wpm),
+    sessionRaw: Math.round(overallStats.raw),
+    sessionAccuracy: Math.round(overallStats.accuracy),
     speedUnit: "cpm",
     accuracy: Math.round(stats.accuracy),
-    consistency: Math.round(stats.consistency),
     chars: `${stats.correct}/${stats.incorrect}/${stats.extra}`,
+    指标: buildChineseMetricsArchive(stats, {
+      elapsed: getPracticeElapsed(),
+      segmentElapsed: stats.elapsed || 0,
+      overallStats
+    }),
     missed,
     ...(adaptive ? {
       adaptive: state.adaptive,
       slowWords: summary.slowWords,
       keyStats: summary.keyStats,
       fingerStats: summary.fingerStats,
-      wordStats: summary.wordStats
+      wordStats: summary.wordStats.slice(0, 48)
     } : {})
   };
   appendRecord(record);
   state.practiceCheckpoint = state.practiceTyped.length;
+  state.practiceMonitorStartTime = null;
+  state.practiceLastKeyAt = 0;
   state.practiceKeyEvents = state.practiceKeyEvents.filter((event) => event.position >= state.practiceCheckpoint - 20);
   if (adaptive) requestAdaptivePracticePlan(summary);
   buildLessonList();
@@ -1852,22 +2675,92 @@ function handlePracticeKey(event) {
   }
   if (event.key === "Backspace" || event.key === "Delete") {
     event.preventDefault();
-    recordPracticeDeleteEvent(Math.max(0, state.practiceTyped.length - 1));
-    state.practiceTyped = state.practiceTyped.slice(0, -1);
-    renderPractice();
+    deletePracticeInputChar();
     return;
   }
-  if (event.key.length !== 1) return;
-  event.preventDefault();
+  queueRealInputKeyFallback(event);
+}
+
+function deletePracticeInputChar() {
+  if (!state.practiceTyped.length) return false;
+  const deletePosition = Math.max(0, state.practiceTyped.length - 1);
+  recordPracticeDeleteEvent(deletePosition);
+  state.practiceTyped = state.practiceTyped.slice(0, -1);
+  if (state.practiceTyped.length < state.practiceCheckpoint) {
+    state.practiceCheckpoint = state.practiceTyped.length;
+  }
+  if (state.practiceTyped.length <= state.practiceCheckpoint) {
+    state.practiceMonitorStartTime = null;
+    state.practiceLastKeyAt = 0;
+  }
+  state.practiceKeyEvents = state.practiceKeyEvents.filter((event) => event.type === "delete" || event.position < state.practiceTyped.length);
+  renderPractice();
+  scheduleFingerGuideRefresh();
+  return true;
+}
+
+function acceptPracticeInputChar(typedChar) {
+  if (state.view !== "practice" || !typedChar) return;
   startPractice();
+  startPracticeMonitorWindow();
   const position = state.practiceTyped.length;
   const expected = state.practiceText[position] || "";
-  state.practiceTyped += event.key;
-  recordPracticeKeyEvent(event.key, position, expected);
+  state.practiceTyped += typedChar;
+  recordPracticeKeyEvent(typedChar, position, expected);
   triggerTypingBird(els.practiceBird);
   appendPracticeTextIfNeeded();
   recordPracticeProgress();
   renderPractice();
+}
+
+function handleRealTypingInput(event) {
+  if (state.view !== "test" && state.view !== "practice") return;
+  if (event.isComposing || realInputComposing) return;
+  const text = getInputOutputText(event);
+  if (els.realTypingInput) els.realTypingInput.value = "";
+  if (realInputSkipText && text === realInputSkipText) {
+    realInputSkipText = "";
+    return;
+  }
+  acceptRealTypedText(text, true);
+}
+
+function handleRealTypingBeforeInput(event) {
+  if (state.view !== "test" && state.view !== "practice") return;
+  if (event.isComposing || realInputComposing) return;
+  if (event.inputType?.startsWith("delete")) {
+    event.preventDefault();
+    if (els.realTypingInput) els.realTypingInput.value = "";
+    if (state.view === "test") deleteTestInputChar();
+    if (state.view === "practice") deletePracticeInputChar();
+    return;
+  }
+  if (!event.inputType?.startsWith("insert")) return;
+  const text = event.data || "";
+  if (!text) return;
+  event.preventDefault();
+  if (els.realTypingInput) els.realTypingInput.value = "";
+  realInputSkipText = text;
+  window.setTimeout(() => {
+    if (realInputSkipText === text) realInputSkipText = "";
+  }, 0);
+  acceptRealTypedText(text, true);
+}
+
+function handleRealTypingCompositionStart() {
+  realInputComposing = true;
+}
+
+function handleRealTypingCompositionEnd(event) {
+  realInputComposing = false;
+  const text = event.data || els.realTypingInput?.value || "";
+  if (els.realTypingInput) els.realTypingInput.value = "";
+  if (!text) return;
+  realInputSkipText = text;
+  window.setTimeout(() => {
+    if (realInputSkipText === text) realInputSkipText = "";
+  }, 0);
+  acceptRealTypedText(text, true);
 }
 
 function renderHistory() {
@@ -1881,6 +2774,7 @@ function renderHistory() {
   const practiceCount = records.filter((record) => record.type === "practice").length;
   const best = [...records].sort((a, b) => getRecordSpeed(b) - getRecordSpeed(a))[0];
   const avg = Math.round(records.reduce((sum, record) => sum + getRecordSpeed(record), 0) / records.length);
+  const avgRaw = Math.round(records.reduce((sum, record) => sum + getRecordRaw(record), 0) / records.length);
   const acc = Math.round(records.reduce((sum, record) => sum + (record.accuracy || 0), 0) / records.length);
   els.historySummary.innerHTML = `
     <span>记录 ${records.length} 条</span>
@@ -1888,15 +2782,16 @@ function renderHistory() {
     <span>练习 ${practiceCount} 段</span>
     <span>最佳 ${getRecordSpeed(best)} 字符/分</span>
     <span>平均 ${avg} 字符/分</span>
+    <span>平均原始速度 ${avgRaw} 字符/分</span>
     <span>准确率 ${acc}%</span>
   `;
   els.historyTable.innerHTML = records.map((record) => `
     <div class="history-row" data-record-id="${escapeHtml(record.id || "")}">
       <strong>${escapeHtml(getRecordLabel(record))}</strong>
-      <span>${getRecordSpeed(record)} 字符/分</span>
-      <span>${record.accuracy}% 准确率</span>
-      <span>${getRecordRaw(record)} 原始</span>
-      <span>${record.consistency}% 稳定</span>
+      <span>速度 ${getRecordDisplayMetrics(record).speed} 字符/分</span>
+      <span>原始速度 ${getRecordDisplayMetrics(record).raw} 字符/分</span>
+      <span>准确率 ${getRecordDisplayMetrics(record).accuracy}%</span>
+      <span>字符 ${escapeHtml(getRecordDisplayMetrics(record).charsText)}</span>
       <span>${new Date(record.date).toLocaleDateString()}</span>
     </div>
   `).join("");
@@ -1909,6 +2804,7 @@ function getRecordLabel(record) {
 
 function switchView(view) {
   state.view = view;
+  document.body.dataset.activeView = view;
   els.tabs.forEach((tab) => tab.classList.toggle("is-active", tab.dataset.view === view));
   els.workspace.classList.toggle("settings-hidden", view !== "test");
   els.testView.classList.toggle("view-hidden", view !== "test");
@@ -1919,6 +2815,7 @@ function switchView(view) {
   if (view === "test") {
     renderAll();
     requestAnimationFrame(() => {
+      applyFingerGuidePosition(view);
       positionTypingBird(els.typingBird);
       focusSurface(els.typeSurface);
     });
@@ -1930,6 +2827,7 @@ function switchView(view) {
       renderPractice();
     }
     requestAnimationFrame(() => {
+      applyFingerGuidePosition(view);
       positionTypingBird(els.practiceBird);
       focusSurface(els.practiceSurface);
     });
@@ -1949,10 +2847,25 @@ function setActiveButton(group, selector, value) {
 }
 
 function isEditable(target) {
+  if (target === els.realTypingInput) return false;
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable;
 }
 
+function focusActiveTypingSurface() {
+  if (state.view === "test") focusSurface(els.typeSurface);
+  if (state.view === "practice") focusSurface(els.practiceSurface);
+}
+
 function focusSurface(element) {
+  if ((element === els.typeSurface || element === els.practiceSurface) && els.realTypingInput) {
+    els.realTypingInput.value = "";
+    try {
+      els.realTypingInput.focus({ preventScroll: true });
+    } catch {
+      els.realTypingInput.focus();
+    }
+    return;
+  }
   try {
     element.focus({ preventScroll: true });
   } catch {
@@ -1974,8 +2887,20 @@ function bindEvents() {
     handleTypingKey(event);
     handlePracticeKey(event);
   });
+  els.realTypingInput?.addEventListener("beforeinput", handleRealTypingBeforeInput);
+  els.realTypingInput?.addEventListener("input", handleRealTypingInput);
+  els.realTypingInput?.addEventListener("compositionstart", handleRealTypingCompositionStart);
+  els.realTypingInput?.addEventListener("compositionend", handleRealTypingCompositionEnd);
 
-  window.addEventListener("resize", positionVisibleTypingBird);
+  document.addEventListener("pointerdown", startFingerGuideDrag);
+  document.addEventListener("pointermove", moveFingerGuideDrag);
+  document.addEventListener("pointerup", stopFingerGuideDrag);
+  document.addEventListener("pointercancel", stopFingerGuideDrag);
+  document.addEventListener("click", handleFingerGuideReset);
+  window.addEventListener("resize", () => {
+    positionVisibleTypingBird();
+    requestAnimationFrame(() => applyFingerGuidePosition(state.view));
+  });
   window.addEventListener("scroll", positionVisibleTypingBird, { passive: true });
 
   els.tabs.forEach((tab) => {
@@ -2017,8 +2942,8 @@ function bindEvents() {
 
   els.restartBtn.addEventListener("click", prepareTarget);
   els.brandReset.addEventListener("click", prepareTarget);
-  els.typeSurface.addEventListener("click", () => els.typeSurface.focus());
-  els.practiceSurface.addEventListener("click", () => els.practiceSurface.focus());
+  els.typeSurface.addEventListener("click", () => focusSurface(els.typeSurface));
+  els.practiceSurface.addEventListener("click", () => focusSurface(els.practiceSurface));
   els.nextLessonLineBtn.addEventListener("click", () => preparePracticeLine(true));
 
   els.lessonList.addEventListener("click", (event) => {
@@ -2033,7 +2958,7 @@ function bindEvents() {
     const row = event.target.closest("[data-record-id]");
     if (!row) return;
     const record = state.history.find((item) => item.id === row.dataset.recordId);
-    if (!record || record.type === "practice") return;
+    if (!record) return;
     showStoredResult(record);
   });
 
@@ -2066,9 +2991,11 @@ function positionVisibleTypingBird() {
   if (state.view === "practice") positionTypingBird(els.practiceBird);
 }
 
+document.body.dataset.activeView = state.view;
 bindEvents();
 buildLessonList();
 buildFingerGuides();
+startFingerGuideHeartbeat();
 preloadTypingBirdFrames();
 preparePracticeLine(false);
 prepareTarget();

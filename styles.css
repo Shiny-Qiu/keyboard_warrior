@@ -186,10 +186,39 @@ textarea:focus-visible,
 
 .workspace.settings-hidden {
   grid-template-columns: 1fr;
+  margin-top: 30px;
 }
 
 .workspace.settings-hidden .settings-panel {
   display: none;
+}
+
+.workspace.settings-hidden .lesson-header {
+  margin-bottom: 10px;
+}
+
+.workspace.settings-hidden .level-status-panel,
+.workspace.settings-hidden .lesson-info-cards {
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.workspace.settings-hidden .live-monitor-cards {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.workspace.settings-hidden .level-status-main,
+.workspace.settings-hidden .level-status-item,
+.workspace.settings-hidden .lesson-info-card,
+.workspace.settings-hidden .live-monitor-card {
+  min-height: 58px;
+  padding: 8px 10px;
+}
+
+.workspace.settings-hidden .type-surface {
+  height: calc(var(--typing-line-size) + var(--typing-line-size) + 24px);
+  padding: 12px 8px;
 }
 
 .panel {
@@ -300,9 +329,27 @@ textarea:focus-visible,
   display: none;
 }
 
+.real-typing-input {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  resize: none;
+  border: 0;
+  padding: 0;
+  outline: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 34px;
 }
@@ -424,12 +471,73 @@ textarea:focus-visible,
 
 .finger-guide {
   width: 100%;
-  margin: 12px 0 0;
-  padding: 8px 12px 10px;
+  margin: 8px 0 0;
+  padding: 6px 10px 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(31, 29, 24, 0.7);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.18);
+}
+
+.finger-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 22px;
+  margin: -2px 0 2px;
+  color: var(--faint);
+  cursor: grab;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  user-select: none;
+  touch-action: none;
+}
+
+.finger-drag-handle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.finger-drag-handle span::before {
+  width: 22px;
+  height: 10px;
+  border-top: 2px dotted rgba(240, 189, 83, 0.55);
+  border-bottom: 2px dotted rgba(240, 189, 83, 0.55);
+  content: "";
+}
+
+.finger-guide.is-dragging {
+  border-color: rgba(240, 189, 83, 0.68);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(240, 189, 83, 0.18);
+}
+
+.finger-guide.has-error {
+  border-color: rgba(255, 111, 111, 0.48);
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255, 111, 111, 0.12);
+}
+
+.finger-guide.is-dragging .finger-drag-handle {
+  cursor: grabbing;
+}
+
+.finger-guide-reset {
+  height: 22px;
+  min-width: 42px;
+  padding: 0 8px;
+  border: 1px solid rgba(240, 189, 83, 0.28);
+  border-radius: 6px;
+  background: rgba(31, 29, 24, 0.72);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+}
+
+.finger-guide-reset:hover {
+  color: var(--accent);
+  border-color: rgba(240, 189, 83, 0.56);
 }
 
 .finger-hands {
@@ -437,12 +545,12 @@ textarea:focus-visible,
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin: -10px auto 2px;
+  margin: -12px auto 0;
 }
 
 .hand-picture {
-  width: clamp(104px, 13vw, 132px);
-  min-width: 96px;
+  width: clamp(90px, 11vw, 116px);
+  min-width: 88px;
 }
 
 .hand-picture svg {
@@ -538,6 +646,12 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
+.finger-guide.has-error .finger-instruction {
+  border-color: rgba(255, 111, 111, 0.56);
+  background: rgba(255, 111, 111, 0.11);
+  color: #ffe2dc;
+}
+
 .finger-keyboard {
   display: grid;
   gap: 4px;
@@ -573,8 +687,8 @@ textarea:focus-visible,
 
 .finger-key {
   display: grid;
-  width: 34px;
-  height: 32px;
+  width: 32px;
+  height: 30px;
   place-items: center;
   border: 1px solid currentColor;
   border-radius: 6px;
@@ -591,6 +705,11 @@ textarea:focus-visible,
 
 .finger-key-delete {
   width: 64px;
+  text-transform: lowercase;
+}
+
+.finger-key-shift {
+  width: 68px;
   text-transform: lowercase;
 }
 
@@ -626,6 +745,104 @@ textarea:focus-visible,
   box-shadow: 0 0 0 2px rgba(240, 189, 83, 0.18), 0 0 24px rgba(240, 189, 83, 0.2);
   color: #fff7d8;
   transform: translateY(-2px) scale(1.08);
+}
+
+body[data-active-view="test"] #testFingerGuide,
+body[data-active-view="practice"] #practiceFingerGuide {
+  position: fixed;
+  top: 88px;
+  right: 18px;
+  bottom: auto;
+  left: auto;
+  z-index: 22;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(42vh, 318px);
+  margin: 0;
+  overflow: hidden;
+  transform: none;
+  border-color: rgba(240, 189, 83, 0.36);
+  background:
+    linear-gradient(180deg, rgba(240, 189, 83, 0.1), transparent),
+    rgba(22, 20, 17, 0.94);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px);
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-hands,
+body[data-active-view="practice"] #practiceFingerGuide .finger-hands {
+  margin: -16px auto -4px;
+}
+
+body[data-active-view="test"] #testFingerGuide .hand-picture,
+body[data-active-view="practice"] #practiceFingerGuide .hand-picture {
+  width: clamp(72px, 8vw, 94px);
+  min-width: 72px;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-guide-head,
+body[data-active-view="practice"] #practiceFingerGuide .finger-guide-head {
+  margin-bottom: 2px;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-current,
+body[data-active-view="practice"] #practiceFingerGuide .finger-current {
+  font-size: 1.08rem;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-instruction,
+body[data-active-view="practice"] #practiceFingerGuide .finger-instruction {
+  min-height: 26px;
+  padding: 5px 9px;
+  font-size: 0.8rem;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-keyboard,
+body[data-active-view="practice"] #practiceFingerGuide .finger-keyboard {
+  gap: 3px;
+}
+
+body[data-active-view="test"] #testFingerGuide .keyboard-row,
+body[data-active-view="practice"] #practiceFingerGuide .keyboard-row {
+  gap: 4px;
+}
+
+body[data-active-view="test"] #testFingerGuide .keyboard-row-1,
+body[data-active-view="practice"] #practiceFingerGuide .keyboard-row-1 {
+  transform: translateX(20px);
+}
+
+body[data-active-view="test"] #testFingerGuide .keyboard-row-2,
+body[data-active-view="practice"] #practiceFingerGuide .keyboard-row-2 {
+  padding-left: 8px;
+}
+
+body[data-active-view="test"] #testFingerGuide .keyboard-row-3,
+body[data-active-view="practice"] #practiceFingerGuide .keyboard-row-3 {
+  padding-left: 18px;
+}
+
+body[data-active-view="test"] #testFingerGuide .keyboard-row-4,
+body[data-active-view="practice"] #practiceFingerGuide .keyboard-row-4 {
+  padding-left: 0;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-key,
+body[data-active-view="practice"] #practiceFingerGuide .finger-key {
+  width: 28px;
+  height: 26px;
+  font-size: 0.72rem;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-key-space,
+body[data-active-view="practice"] #practiceFingerGuide .finger-key-space {
+  width: 142px;
+}
+
+body[data-active-view="test"] #testFingerGuide .finger-key-delete,
+body[data-active-view="practice"] #practiceFingerGuide .finger-key-delete,
+body[data-active-view="test"] #testFingerGuide .finger-key-shift,
+body[data-active-view="practice"] #practiceFingerGuide .finger-key-shift {
+  width: 58px;
 }
 
 .practice-layout {
@@ -696,7 +913,6 @@ h2 {
   line-height: 1.08;
 }
 
-.lesson-stats,
 .history-summary {
   display: flex;
   flex-wrap: wrap;
@@ -704,7 +920,6 @@ h2 {
   margin-bottom: 24px;
 }
 
-.lesson-stats span,
 .history-summary span,
 .result-details span,
 .missed-words span {
@@ -718,6 +933,102 @@ h2 {
   font-size: 0.78rem;
 }
 
+.lesson-info-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.level-status-panel {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.15fr) repeat(2, minmax(120px, 0.72fr)) minmax(240px, 1.25fr);
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.live-monitor-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.level-status-main,
+.level-status-item,
+.lesson-info-card,
+.live-monitor-card {
+  min-width: 0;
+  min-height: 72px;
+  padding: 11px 12px;
+  border: 1px solid rgba(240, 189, 83, 0.34);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(240, 189, 83, 0.08), transparent),
+    rgba(31, 29, 24, 0.68);
+}
+
+.level-status-main {
+  border-color: rgba(102, 224, 207, 0.45);
+  background:
+    linear-gradient(180deg, rgba(102, 224, 207, 0.12), transparent),
+    rgba(31, 29, 24, 0.72);
+}
+
+.level-status-wide {
+  min-width: 0;
+}
+
+.level-status-main span,
+.level-status-item span,
+.lesson-info-card span,
+.lesson-info-card small,
+.live-monitor-card span,
+.live-monitor-card small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.level-status-main strong,
+.level-status-item strong,
+.lesson-info-card strong,
+.live-monitor-card strong {
+  display: block;
+  margin: 4px 0 2px;
+  overflow: hidden;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: clamp(1.15rem, 1.8vw, 1.62rem);
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.level-status-main strong {
+  color: var(--text);
+  font-size: clamp(1rem, 1.4vw, 1.22rem);
+}
+
+.level-status-item strong {
+  color: var(--accent);
+  font-size: clamp(0.95rem, 1.2vw, 1.08rem);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.lesson-info-card strong {
+  color: var(--text);
+  font-size: clamp(0.98rem, 1.35vw, 1.18rem);
+  line-height: 1.22;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .practice-surface {
   min-height: 0;
 }
@@ -729,7 +1040,7 @@ h2 {
 
 .history-row {
   display: grid;
-  grid-template-columns: 1.1fr repeat(5, minmax(68px, 0.5fr));
+  grid-template-columns: minmax(180px, 1.1fr) repeat(5, minmax(92px, 0.55fr));
   gap: 8px;
   align-items: center;
   min-height: 50px;
@@ -1074,6 +1385,9 @@ h2 {
   }
 
   .metrics-grid,
+  .level-status-panel,
+  .lesson-info-cards,
+  .live-monitor-cards,
   .result-grid,
   .result-dashboard {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1114,6 +1428,9 @@ h2 {
   }
 
   .metrics-grid,
+  .level-status-panel,
+  .lesson-info-cards,
+  .live-monitor-cards,
   .result-grid,
   .result-hero {
     grid-template-columns: 1fr;

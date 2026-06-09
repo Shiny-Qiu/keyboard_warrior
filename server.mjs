@@ -138,11 +138,16 @@ function getAdaptiveSystemPrompt() {
     "训练路径必须循序渐进：基准键位控制 -> 上排键位伸展 -> 下排键位平衡 -> 常用英文词 -> 标点英文句子 -> 数字与复杂英文上下文。",
     "每个阶段都必须从简单单词开始，逐步加入更长单词、常见字母组合、标点、数字和自然短句。",
     "经常打错或明显变慢的词、键位、手指，要在下一组中提高出现频率；总是打对且速度快的词要逐步减少。",
-    "只有准确率、字符/分、稳定性连续达到目标，才能进入下一难度；如果当前难度长时间不能达标，应该降级或转入专项练习。",
+    "输入摘要中 currentStageWords 是当前阶段推荐词库，nextWords 必须优先覆盖这些词，再结合 weakWords 和 similarKeyHints。",
+    "输入摘要中 masteredWords 表示用户已经连续打对且速度快的词，这是硬性排除列表；除非它们同时也是错词、慢词或 weakWords，否则 nextWords 不要再包含这些词。",
+    "输入摘要中 similarKeyHints 表示与错键或慢键相关的相似键位词，nextWords 应优先加入其中一部分，帮助用户练相近键位。",
+    "练习内容应尽可能组合成真实可能发生的英文短句场景，并包含常见英文书面标点：逗号、句号、分号、问号、撇号、连字符和数字。",
+    "只有准确率和字符/分连续达到目标，才能进入下一难度；如果只是速度未达标但准确率稳定，应保持当前等级并做专项加练，不要降级。只有准确率明显吃力或连续大幅低于目标时，才可以降级。",
     "不要输出解释性正文，只返回一个压缩 JSON 对象。JSON 不要使用 Markdown 代码块，不要换行。",
     "JSON 字段：level(number 1-7), stageId(string), stageLabel(string), decision(string: advance|hold|focus|downgrade), targetAccuracy(number), targetCpm(number), focusKeys(array), focusFingers(array), nextWords(array), coachMessage(string)。",
-    "nextWords 必须是 18 到 32 个英文练习词或短词组，每项最多 16 个字符，只包含英文大小写字母、数字、逗号、句号、分号、问号、撇号和连字符。",
-    "不要输出 nextText 字段，服务端会根据 nextWords 组合练习文本。",
+    "nextWords 必须是 48 到 72 个不重复的英文练习词，每项最多 18 个字符，只包含英文大小写字母、数字、逗号、句号、分号、问号、撇号和连字符。",
+    "nextWords 中至少 70% 应来自 currentStageWords、similarKeyHints 或 weakWords；不要为了凑数加入完全无关的长词。",
+    "不要输出 nextText 字段，服务端会根据 nextWords 组合成带标点和数字的真实短句。",
     "coachMessage 使用中文，一句话即可。",
     "你将从已经给出的前缀 {\"level\": 后面继续写 JSON，不要重复左花括号，不要重复 level 字段名。"
   ].join("\n");
@@ -177,37 +182,122 @@ function normalizeAdaptiveText(value) {
     .replace(/[^A-Za-z0-9 ,.;?'\-\n]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 620);
+    .slice(0, 1200);
 }
 
 function normalizeAdaptiveWords(value) {
   if (!Array.isArray(value)) return [];
+  const seen = new Set();
   return value
     .map((item) => String(item || "").replace(/[^A-Za-z0-9,.;?'\-]/g, "").trim())
     .filter(Boolean)
     .filter((item) => item.length <= 18)
-    .slice(0, 36);
+    .filter((item) => {
+      const key = item.toLowerCase().replace(/[,.?;]+$/g, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 72);
 }
 
 function buildTextFromAdaptiveWords(words, level) {
-  const cleanWords = normalizeAdaptiveWords(words);
+  const cleanWords = normalizeAdaptiveWords(words)
+    .map((word) => word.replace(/[,.?;]+$/g, ""))
+    .filter(Boolean);
   if (!cleanWords.length) return "";
-  const output = [];
+  const numbers = [3, 5, 8, 12, 15, 18, 24, 30, 42, 60, 75, 90];
+  const templates = [
+    (a, b, c, n) => `At ${n}, ${a} came before ${b}; ${c} came next.`,
+    (a, b, c, n) => `After ${n} tries, ${a} felt clear, but ${b} needed ${c}.`,
+    (a, b, c, n) => `Don't rush; use ${a}, then ${b}, then ${c}.`,
+    (a, b, c, n) => `When ${n} seconds passed, ${a} and ${b} felt easier.`,
+    (a, b, c, n) => `${a} wasn't ${b}; it was ${c}.`,
+    (a, b, c, n) => `By ${n}, ${a}, ${b}, and ${c} stayed in order.`,
+    (a, b, c, n) => `If ${a} looks wrong, try ${b} before ${c}.`,
+    (a, b, c, n) => `${a} is quick; ${b} is careful; ${c} is steady.`,
+    (a, b, c, n) => `For ${n} seconds, ${a} moved near ${b} and ${c}.`,
+    (a, b, c, n) => `Use ${a}-first, pause at ${b}, and end with ${c}.`,
+    (a, b, c, n) => `${a} can lead, ${b} can follow, and ${c} can close.`,
+    (a, b, c, n) => `If ${a} is easy now, skip it and spend ${n} seconds on ${c}.`,
+    (a, b, c, n) => `${a}, ${b}, and ${c} should feel clean by ${n}.`,
+    (a, b, c, n) => `Start with ${a}; shift to ${b}; settle on ${c}.`,
+    (a, b, c, n) => `A ${n}-second pass used ${a}, ${b}, and ${c}.`,
+    (a, b, c, n) => `${a} stayed calm, ${b} stayed short, and ${c} stayed exact.`
+  ];
+  const sentences = [];
   let cursor = 0;
-  while (output.join(" ").length < 320 && output.length < 90) {
-    let word = cleanWords[cursor % cleanWords.length];
-    if (level >= 5 && cursor % 9 === 5 && !/[,.?;]$/.test(word)) word += [",", ".", ";", "?"][cursor % 4];
-    if (level >= 6 && cursor % 13 === 8) output.push(String(10 + (cursor % 80)));
-    output.push(word);
-    cursor += 1;
+  while (sentences.join(" ").length < 860 && sentences.length < 14) {
+    const a = cleanWords[cursor % cleanWords.length];
+    const b = cleanWords[(cursor + 1) % cleanWords.length] || a;
+    const c = cleanWords[(cursor + 2) % cleanWords.length] || b;
+    const n = numbers[(cursor + level) % numbers.length];
+    const template = templates[(sentences.length + level) % templates.length];
+    sentences.push(template(a, b, c, n));
+    cursor += 3;
   }
-  return normalizeAdaptiveText(output.join(" "));
+  return normalizeAdaptiveText(sentences.join(" "));
 }
 
-function sanitizeAdaptivePlan(plan) {
-  const level = Math.min(7, Math.max(1, Number(plan.level) || 1));
-  const decision = ["advance", "hold", "focus", "downgrade"].includes(plan.decision) ? plan.decision : "hold";
-  const nextWords = normalizeAdaptiveWords(plan.nextWords);
+function getAdaptiveWordKey(value) {
+  return String(value || "")
+    .replace(/[^A-Za-z0-9'\-]/g, "")
+    .toLowerCase();
+}
+
+function filterAdaptiveWordsForContext(words, context = {}) {
+  const protectedWords = new Set([
+    ...(context.weakWords || []),
+    ...(context.segment?.missedWords || []),
+    ...(context.segment?.missed || []),
+    ...((context.segment?.slowWords || []).map((item) => item?.word || item))
+  ].map(getAdaptiveWordKey).filter(Boolean));
+  const mastered = new Set((context.masteredWords || [])
+    .map(getAdaptiveWordKey)
+    .filter((word) => word && !protectedWords.has(word)));
+  const fallbackWords = [
+    "read", "check", "list", "room", "task", "note", "send", "file",
+    "mark", "plan", "team", "desk", "timer", "report", "update", "review",
+    "number", "answer", "message", "practice"
+  ];
+  const stageWords = normalizeAdaptiveWords(context.currentStageWords || []);
+  const hintWords = normalizeAdaptiveWords([
+    ...(context.similarKeyHints || []),
+    ...(context.weakWords || []),
+    ...(context.segment?.missedWords || []),
+    ...((context.segment?.slowWords || []).map((item) => item?.word || item))
+  ]);
+  const priorityKeys = new Set([...stageWords, ...hintWords].map(getAdaptiveWordKey));
+  const modelWords = normalizeAdaptiveWords(words);
+  const modelPriority = modelWords.filter((word) => priorityKeys.has(getAdaptiveWordKey(word)));
+  const modelSupplement = modelWords.filter((word) => !priorityKeys.has(getAdaptiveWordKey(word)));
+  return normalizeAdaptiveWords([
+    ...hintWords,
+    ...stageWords,
+    ...modelPriority,
+    ...modelSupplement,
+    ...fallbackWords
+  ]).filter((word) => !mastered.has(getAdaptiveWordKey(word))).slice(0, 72);
+}
+
+function sanitizeAdaptivePlan(plan, context = {}) {
+  const currentLevel = Math.min(7, Math.max(1, Number(context.current?.level || context.level) || 1));
+  let level = Math.min(7, Math.max(1, Number(plan.level) || currentLevel));
+  let decision = ["advance", "hold", "focus", "downgrade"].includes(plan.decision) ? plan.decision : "hold";
+  const segmentAccuracy = Number(context.segment?.accuracy || 0);
+  const segmentCpm = Number(context.segment?.cpm || 0);
+  const targetAccuracy = Number(context.segment?.targetAccuracy || context.current?.targetAccuracy || 94);
+  const targetCpm = Number(context.segment?.targetCpm || context.current?.targetCpm || 0);
+  const speedOnlyMiss = segmentAccuracy >= targetAccuracy && segmentCpm < targetCpm;
+
+  if (level < currentLevel && (decision !== "downgrade" || speedOnlyMiss)) {
+    level = currentLevel;
+    decision = speedOnlyMiss ? "focus" : "hold";
+  } else if (level < currentLevel - 1) {
+    level = currentLevel - 1;
+  }
+
+  const nextWords = filterAdaptiveWordsForContext(plan.nextWords, context);
   const generatedText = buildTextFromAdaptiveWords(nextWords, level);
   return {
     level,
@@ -245,7 +335,7 @@ async function requestAdaptivePlan(payload) {
       signal: controller.signal,
       body: JSON.stringify({
         model: mimoModel,
-        max_tokens: 650,
+        max_tokens: 1500,
         system: getAdaptiveSystemPrompt(),
         messages: [
           {
@@ -281,7 +371,7 @@ async function requestAdaptivePlan(payload) {
     }
     const text = extractAnthropicText(data);
     const candidate = text.trim().startsWith("{") ? text : `${jsonPrefix}${text}`;
-    return sanitizeAdaptivePlan(parseJsonObject(candidate));
+    return sanitizeAdaptivePlan(parseJsonObject(candidate), payload);
   } finally {
     clearTimeout(timeoutId);
   }

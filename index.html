@@ -81,10 +81,6 @@
               <span class="metric-value" id="accuracyMetric">100%</span>
               <span class="metric-label">准确率</span>
             </div>
-            <div class="metric">
-              <span class="metric-value" id="consistencyMetric">100%</span>
-              <span class="metric-label">稳定性</span>
-            </div>
           </div>
 
           <div class="type-surface" id="typeSurface" tabindex="0" aria-label="打字区域">
@@ -108,28 +104,62 @@
                   <h1 id="lessonTitle">基准键位控制</h1>
                 </div>
               </div>
-              <div class="lesson-stats">
-                <span id="lessonFocus">基准键位</span>
-                <span id="lessonScore">已完成 0 次</span>
-                <span id="lessonWeak">弱项：暂无</span>
-                <span id="lessonCoach">教练：等待输入</span>
+              <div class="level-status-panel" id="levelStatusPanel" aria-live="polite">
+                <div class="level-status-main">
+                  <span>当前等级</span>
+                  <strong id="levelStatusBadge">等级 1 · 基准键位控制</strong>
+                </div>
+                <div class="level-status-item">
+                  <span>当前目标</span>
+                  <strong id="levelStatusTarget">70 字符/分 · 96%</strong>
+                </div>
+                <div class="level-status-item">
+                  <span>达标进度</span>
+                  <strong id="levelStatusProgress">0/2 段</strong>
+                </div>
+                <div class="level-status-item level-status-wide">
+                  <span>升级要求</span>
+                  <strong id="levelStatusNext">连续 2 段达到目标后进入下一等级</strong>
+                </div>
               </div>
-              <div class="metrics-grid practice-metrics" aria-live="polite">
-                <div class="metric">
-                  <span class="metric-value" id="practiceWpmMetric">0</span>
-                  <span class="metric-label">字符/分</span>
+              <div class="lesson-info-cards" aria-live="polite">
+                <div class="lesson-info-card">
+                  <span>阶段目标</span>
+                  <strong id="lessonFocus">基准键位</strong>
                 </div>
-                <div class="metric">
-                  <span class="metric-value" id="practiceRawMetric">0</span>
-                  <span class="metric-label">原始速度</span>
+                <div class="lesson-info-card">
+                  <span>等级进度</span>
+                  <strong id="lessonScore">已完成 0 次</strong>
                 </div>
-                <div class="metric">
-                  <span class="metric-value" id="practiceAccuracyMetric">100%</span>
-                  <span class="metric-label">准确率</span>
+                <div class="lesson-info-card">
+                  <span>弱项</span>
+                  <strong id="lessonWeak">暂无</strong>
                 </div>
-                <div class="metric">
-                  <span class="metric-value" id="practiceConsistencyMetric">100%</span>
-                  <span class="metric-label">稳定性</span>
+                <div class="lesson-info-card lesson-info-card-wide">
+                  <span>教练</span>
+                  <strong id="lessonCoach">等待输入</strong>
+                </div>
+              </div>
+              <div class="live-monitor-cards" id="lessonMonitor" aria-live="polite">
+                <div class="live-monitor-card">
+                  <span>实时速度</span>
+                  <strong id="lessonMonitorWpm">0</strong>
+                  <small>字符/分</small>
+                </div>
+                <div class="live-monitor-card">
+                  <span>实时原始速度</span>
+                  <strong id="lessonMonitorRaw">0</strong>
+                  <small>字符/分</small>
+                </div>
+                <div class="live-monitor-card">
+                  <span>实时准确率</span>
+                  <strong id="lessonMonitorAccuracy">100%</strong>
+                  <small>准确率</small>
+                </div>
+                <div class="live-monitor-card">
+                  <span>监测状态</span>
+                  <strong id="lessonMonitorStatus">等待输入</strong>
+                  <small>综合练习</small>
                 </div>
               </div>
               <div class="type-surface practice-surface" id="practiceSurface" tabindex="0" aria-label="英文练习打字区域">
@@ -191,7 +221,6 @@
       <div class="result-details">
         <span id="resultRaw">原始速度 0</span>
         <span id="resultChars">字符 0/0/0</span>
-        <span id="resultConsistency">稳定性 100%</span>
         <span id="resultType">计时 30 秒 · 英文</span>
         <span id="resultPb">最佳 -</span>
       </div>
@@ -202,6 +231,7 @@
       </div>
     </dialog>
 
+    <textarea class="real-typing-input" id="realTypingInput" autocomplete="off" autocapitalize="off" spellcheck="false" aria-hidden="true"></textarea>
     <script type="module" src="./app.js"></script>
   </body>
 </html>
